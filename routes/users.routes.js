@@ -16,6 +16,10 @@ router.route('/:id')
     .put(usersController.update)     // PUT update a user by ID
     .delete(usersController.delete); // DELETE a user by ID
 
+// POST route for user login
+router.post('/login', usersController.login);
+
+
 // Catch-all for unsupported routes under '/users'
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'USERS: Route not found. Please check your URL.' });
