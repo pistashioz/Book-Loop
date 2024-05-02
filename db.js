@@ -20,13 +20,18 @@ const sequelize = new Sequelize(
   }
 );
 
-// Authenticate the database connection
+// Authenticate and sync the database
 sequelize.authenticate()
   .then(() => {
     console.log('Connection has been established successfully.');
+    // Sync models with the database
+    return sequelize.sync({ alter: true }); // Use 'alter: true' to adjust tables to match models
+  })
+  .then(() => {
+    console.log('Database models were synchronized successfully.');
   })
   .catch(err => {
-    console.log('Unable to connect to the database:', err);
+    console.log('Unable to connect to the database or sync models:', err);
   });
 
 module.exports = sequelize;

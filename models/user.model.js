@@ -1,7 +1,7 @@
 // Import DataTypes and sequelize instance from db.js
 const { DataTypes } = require('sequelize');
 const sequelize = require('../db.js');
-
+const bcrypt = require('bcrypt');
 
 const User = sequelize.define('User', {
   userId: {
@@ -11,7 +11,7 @@ const User = sequelize.define('User', {
   },
   name: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   username: {
     type: DataTypes.STRING,
@@ -88,7 +88,25 @@ const User = sequelize.define('User', {
   }
 }, {
   tableName: 'user',  // Specify the table name in the database
-  timestamps: false   // Not using Sequelize's automatic timestamp fields
+  timestamps: false,  // Not using Sequelize's automatic timestamp fields
+  hooks: {
+    beforeCreate: async (user) => {
+      const salt = await bcrypt.genSaltSync(10);
+      user.password = await bcrypt.hashSync(user.password, salt);
+    },
+    beforeUpdate: async (user) => {
+      if (user.changed('password')) {
+        const salt = await bcrypt.genSaltSync(10);
+        user.password = await bcrypt.hashSync(user.password, salt);
+      }
+    }
+  }
 });
+
+  // Validate the password for authentication
+  User.prototype.validPassword = async function (password) {
+    return await bcrypt.compare(password, this.password);
+  };
+
 
 module.exports = User;
