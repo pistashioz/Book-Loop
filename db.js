@@ -1,5 +1,5 @@
 // Import necessary packages
-const Sequelize = require('sequelize');
+const { Sequelize, Op } = require('sequelize'); // Make sure Op is imported
 require('dotenv').config(); // This loads the environment variables from the .env file
 
 // Read database configuration from environment variables

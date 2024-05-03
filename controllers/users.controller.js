@@ -1,5 +1,6 @@
 // Import all models from the index.js in the models directory
 const sequelize = require('../db.js');
+const { Op } = require('sequelize');
 const { User, UserConfiguration, Configuration } = require('../models');
 
 
@@ -118,21 +119,23 @@ exports.delete = async (req, res) => {
   }
 };
 
-// Loing action for user
+// Login action for user
 exports.login = async (req, res) => {
+  console.log(req.body);
   const { usernameOrEmail, password } = req.body;
-
+  console.log(usernameOrEmail);
   try {
+    console.log('Entered login action');
       // Try to find the user by username or email
       const user = await User.findOne({
           where: {
-              [sequelize.Op.or]: [
+              [Op.or]: [
                   { email: usernameOrEmail },
                   { username: usernameOrEmail }
               ]
           }
       });
-
+      console.log(user);
       if (!user) {
           return res.status(404).json({ message: "User not found" });
       }
