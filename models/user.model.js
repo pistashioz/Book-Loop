@@ -1,9 +1,8 @@
-// Import DataTypes and sequelize instance from db.js
-const { DataTypes } = require('sequelize');
-const sequelize = require('../db.js');
 const bcrypt = require('bcrypt');
 
-const User = sequelize.define('User', {
+// Define the User model
+module.exports = (sequelize, DataTypes) => {
+  const User = sequelize.define('User', {
   userId: {
     type: DataTypes.INTEGER,
     autoIncrement: true,
@@ -15,16 +14,27 @@ const User = sequelize.define('User', {
   },
   username: {
     type: DataTypes.STRING,
-    unique: true,
-    allowNull: false
+    allowNull: false,
+    validate: {
+      notNull: {
+        msg: 'Username cannot be null or empty!'
+      }
+    }
   },
   profileImage: {
-    type: DataTypes.STRING(1000)  // If not enough, adjust this value
+    type: DataTypes.STRING(1000)  // Flexible size
   },
   email: {
     type: DataTypes.STRING,
-    unique: true,
-    allowNull: false
+    allowNull: false,
+    validate: {
+      isEmail: {
+        msg: 'Must be a valid email address'
+      },
+      notNull: {
+        msg: 'Email cannot be null or empty!'
+      }   
+    }
   },
   isVerified: {
     type: DataTypes.BOOLEAN,
@@ -32,15 +42,40 @@ const User = sequelize.define('User', {
   },
   password: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: false,
+    validate: {
+      notNull: {
+        msg: 'Password cannot be null or empty!'
+      },
+      len: {
+        args: [8, 42],
+        msg: 'Password should be between 8 and 42 characters'
+      }
+    }
   },
   birthDate: {
     type: DataTypes.DATEONLY,
-    allowNull: false
+    allowNull: false,
+    validate: {
+      isDate: {
+        msg: 'Must be a valid date'
+      },
+      isOldEnough(value) {
+        const today = new Date();
+        const birthDate = new Date(value);
+        const age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          throw new Error('User must be at least 16 years of age to register.');
+        } else if (age < 16) {
+          throw new Error('User must be at least 16 years of age to register.');
+        }
+      }
+    }
   },
   registrationDate: {
     type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW // Automatically sets the current timestamp on record creation
+    defaultValue: DataTypes.NOW // Auto-set to current date
   },
   isActiveStatus: {
     type: DataTypes.ENUM('active', 'suspended', 'banned', 'to be deleted'),
@@ -52,7 +87,7 @@ const User = sequelize.define('User', {
   addressId: {
     type: DataTypes.INTEGER,
     references: {
-      model: 'address', // The name of the table to refer as a FK
+      model: 'address', // Foreign key to 'address' table
       key: 'addressId'
     }
   },
@@ -87,9 +122,10 @@ const User = sequelize.define('User', {
     defaultValue: false
   }
 }, {
-  tableName: 'user',  // Specify the table name in the database
-  timestamps: false,  // Not using Sequelize's automatic timestamp fields
+  tableName: 'user',  // Explicit table name
+  timestamps: false,  // No automatic timestamps
   hooks: {
+    // Hash password before user creation and updates
     beforeCreate: async (user) => {
       const salt = await bcrypt.genSaltSync(10);
       user.password = await bcrypt.hashSync(user.password, salt);
@@ -100,13 +136,20 @@ const User = sequelize.define('User', {
         user.password = await bcrypt.hashSync(user.password, salt);
       }
     }
-  }
+  },
+  indexes: [
+    { unique: true, fields: ['username'] },
+    { unique: true, fields: ['email'] }
+  ],
 });
 
-  // Validate the password for authentication
-  User.prototype.validPassword = async function (password) {
-    return await bcrypt.compare(password, this.password);
-  };
+    // Validate the password for authentication
+    User.prototype.validPassword = async function (password) {
+      return await bcrypt.compare(password, this.password);
+    };
+
+    return User;
+};
 
 
-module.exports = User;
+

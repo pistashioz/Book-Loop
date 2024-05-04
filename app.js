@@ -1,5 +1,6 @@
 // Import required libraries and middleware
 const express = require('express');
+const cors = require('cors');
 require('dotenv').config(); // Load environment variables from .env file at the start
 
 // Initialize the express application
@@ -8,6 +9,9 @@ const app = express();
 // Configure host and port from environment variables or use defaults
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = process.env.PORT || 3000;
+
+// Enable CORS for all routes
+app.use(cors());
 
 // Middleware to parse JSON body data in incoming requests
 app.use(express.json());
