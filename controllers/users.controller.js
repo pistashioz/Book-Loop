@@ -4,8 +4,8 @@ const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog } = db;
-const { verifyToken, issueJWT } = require('../middleware/authJwt'); 
+const { User, UserConfiguration, Configuration, SessionLog, Token } = db;
+const { issueJWT } = require('../middleware/authJwt'); 
 
 
 // Retrieve all users
@@ -165,7 +165,8 @@ exports.login = async (req, res) => {
             where: {
                 userId: user.userId,
                 ipAddress: req.ip,  
-                deviceInfo: req.headers['user-agent'] 
+                deviceInfo: req.headers['user-agent'],
+                expiredAt: null  
             }
         }, { transaction: t });
 
@@ -184,7 +185,15 @@ exports.login = async (req, res) => {
         }, { transaction: t });
 
         // Generate JWTs using the newly created session log ID
-        const tokens = issueJWT(user, sessionLog.sessionId);  // Pass session ID to the token issuer
+        const tokens = issueJWT(user.userId, sessionLog.sessionId);  // Pass session ID to the token issuer
+
+        // Set cookie with HttpOnly and Secure flags
+        res.cookie('accessToken', tokens.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV !== 'development',  // Ensure secure in production
+            expires: new Date(Date.now() + 3600000),  // 1 hour for example
+            sameSite: 'strict'  // This setting can help prevent CSRF attacks
+        });
   
         // If login is successful, commit the transaction and return user info or a token
         await t.commit();
@@ -204,5 +213,64 @@ exports.login = async (req, res) => {
         // Handle any unexpected errors during the process
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
+};
+
+// Log out action for user
+exports.logout = async (req, res) => {
+    const sessionId = req.sessionId; // The current session ID obtained from the authenticated user's request
+
+    // Start a transaction for database operations
+    const t = await db.sequelize.transaction();
+
+    try {
+        // Invalidate the session
+        await SessionLog.update({
+            expiredAt: new Date()
+        }, {
+            where: {
+                sessionId: sessionId
+            },
+            transaction: t
+        });
+
+        // Invalidate the refresh token
+        await Token.update({
+            invalidated: true
+        }, {
+            where: {
+                sessionId: sessionId,
+                tokenType: 'refresh',
+                invalidated: false // Only update if it's not already invalidated
+            },
+            transaction: t
+        });
+
+        // Clear the access token cookie
+        res.cookie('accessToken', '', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV !== 'development',
+            expires: new Date(0) // Set to a past date to immediately expire the cookie
+        });
+
+        await t.commit();
+
+        res.status(200).json({ message: "Logout successful." });
+    } catch (error) {
+        console.error("Failed operation: ", error);
+        await t.rollback();
+        res.status(500).json({ message: "Error during logout", error: error.message });
+    }
+};
+
+// Session validation to verify active user sessions
+exports.validateSession = (req, res) => {
+    // This callback only runs if verifyToken calls next(), meaning the token is valid
+    res.status(200).json({
+        message: "Session is valid.",
+        user: {
+            id: req.userId,  
+            username: req.username // I think we might need to fetch the username from the database here, cb the middleware is not adding it to the request!
+        }
+    });
 };
 

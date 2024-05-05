@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const usersController = require('../controllers/users.controller');
+const { verifyToken } = require('../middleware/authJwt');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -32,6 +33,10 @@ router.route('/:id')
     .delete(usersController.delete);
 
 router.post('/login', usersController.login);
+
+router.post('/logout', verifyToken, usersController.logout);
+
+router.get('/validate-session', verifyToken, usersController.validateSession); // Verify session and return user info
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

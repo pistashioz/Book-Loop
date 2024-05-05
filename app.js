@@ -1,6 +1,7 @@
 // Import required libraries and middleware
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 require('dotenv').config(); // Load environment variables from .env file at the start
 
 // Initialize the express application
@@ -15,6 +16,19 @@ app.use(cors());
 
 // Middleware to parse JSON body data in incoming requests
 app.use(express.json());
+
+// Middleware to parse cookie data in incoming requests
+ app.use(cookieParser());
+
+ // Prevent TRACE method to protect against XST attacks
+app.use((req, res, next) => {
+  if (req.method === "TRACE") {
+      res.status(405).send("TRACE method is disabled.");
+  } else {
+      next();
+  }
+});
+
 
 // Define a basic route to check the server status
 app.get('/', (req, res) => {
