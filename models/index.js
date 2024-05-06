@@ -15,10 +15,10 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
-    /*.then(() => {
+/*     .then(() => {
         console.log('Connection has been established successfully.');
         return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    }*/
+    }) */
     .then(() => {
         console.log('Database models were synchronized successfully.');
     })
@@ -35,6 +35,8 @@ db.UserConfiguration = require('./userConfiguration.model.js')(sequelize, DataTy
 db.Configuration = require('./configuration.model.js')(sequelize, DataTypes);
 db.SessionLog = require('./sessionLog.model.js')(sequelize, DataTypes);
 db.Token = require('./token.model.js')(sequelize, DataTypes);
+db.Address = require('./address.model.js')(sequelize, DataTypes);
+db.PostalCode = require('./postalCode.model.js')(sequelize, DataTypes);
 
 
 // Define relationships
@@ -52,5 +54,12 @@ db.Token.belongsTo(db.User, { foreignKey: 'userId' });
 
 db.SessionLog.hasMany(db.Token, { foreignKey: 'sessionId', onDelete: 'CASCADE' });
 db.Token.belongsTo(db.SessionLog, { foreignKey: 'sessionId' });
+
+db.Address.belongsTo(db.PostalCode, { foreignKey: 'postalCode' });
+db.PostalCode.hasMany(db.Address, {
+    foreignKey: 'postalCode',
+    onDelete: 'RESTRICT'  // Prevents deletion of the postal code if there are associated addresses
+  });
+db.User.belongsTo(db.Address, { foreignKey: 'userId' });
 
 module.exports = db;

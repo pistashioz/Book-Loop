@@ -13,16 +13,11 @@ router.use((req, res, next) => {
     next(); // Proceed to the next middleware or route handler
 });
 
-// Optional: Middleware to check if user is authenticated
-/*router.use((req, res, next) => {
-    if (req.isAuthenticated()) { // Assuming req.isAuthenticated() is a method of checking login - still needs to be implemented
-        next(); // User is authenticated, proceed to the next handler
-    } else {
-        res.status(401).json({ message: "Unauthorized: Please log in." });
-    }
-});*/
+// Define specific routes for "me" to handle profile or settings access
+router.get('/me', verifyToken, usersController.getMyProfile);
+router.get('/me/settings', verifyToken, usersController.getUserSettings);
 
-// Routes configuration
+// General user routes
 router.route('/')
     .get(usersController.findAll)
     .post(usersController.create);
@@ -33,10 +28,8 @@ router.route('/:id')
     .delete(usersController.delete);
 
 router.post('/login', usersController.login);
-
 router.post('/logout', verifyToken, usersController.logout);
-
-router.get('/validate-session', verifyToken, usersController.validateSession); // Verify session and return user info
+router.get('/validate-session', verifyToken, usersController.validateSession);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

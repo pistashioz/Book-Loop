@@ -124,6 +124,7 @@ module.exports = (sequelize, DataTypes) => {
 }, {
   tableName: 'user',  // Explicit table name
   timestamps: false,  // No automatic timestamps
+  freezeTableName: true, // Ensures table name is not pluralized
   hooks: {
     // Hash password before user creation and updates
     beforeCreate: async (user) => {

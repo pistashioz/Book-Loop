@@ -37,7 +37,8 @@ module.exports = (sequelize, DataTypes) => {
       }
     }, {
       tableName: 'token',
-      timestamps: false
+      timestamps: false,
+      freezeTableName: true,
     });
   };
   

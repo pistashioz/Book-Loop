@@ -28,6 +28,7 @@ module.exports = (sequelize, DataTypes) => {
         }
     }, {
         tableName: 'sessionLog',
-        timestamps: false
+        timestamps: false,
+        freezeTableName: true,
     });
 };

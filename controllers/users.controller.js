@@ -1,10 +1,11 @@
 // Import DB configuration and Sequelize operators
 const db = require('../models');
+const dayjs = require('dayjs');
 const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, Address, PostalCode } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 
@@ -24,7 +25,7 @@ exports.findOne = async (req, res) => {
     try {
         const user = await User.findByPk(id);
         if (!user) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({ message: "User not found!!!" });
         }
         res.status(200).json(user);
     } catch (error) {
@@ -111,7 +112,7 @@ exports.update = async (req, res) => {
 };
 
 
-// Delete a user
+// Delete a user - this needs to be turned into a patch request to alter just the isActive status and set a deletion date
 exports.delete = async (req, res) => {
   const { id } = req.params;
   try {
@@ -187,14 +188,13 @@ exports.login = async (req, res) => {
         // Generate JWTs using the newly created session log ID
         const accessToken = issueAccessToken(user.userId, sessionLog.sessionId);  // Immediate access token issuance
         handleRefreshToken(user.userId, sessionLog.sessionId);  // Handle refresh token asynchronously
-        console.log(`Generated access token: ${accessToken}`);
         
         // Set cookie with HttpOnly and Secure flags
         res.cookie('accessToken', accessToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV !== 'development',  // Ensure secure in production
-            expires: new Date(Date.now() + 3600000),  // 1 hour for example
-            sameSite: 'strict'  // This setting can help prevent CSRF attacks
+            secure: process.env.NODE_ENV !== 'development',
+            expires: new Date(dayjs().add(30, 'minute').valueOf()), // Converts to appropriate date format
+            sameSite: 'strict'
         });
         
         // If login is successful, commit the transaction and return user info or a token
@@ -255,15 +255,11 @@ exports.logout = async (req, res) => {
         // });
 
         // Clear the access token cookie
-        res.cookie('accessToken', '', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV !== 'development',
-            expires: new Date(0) // Set to a past date to immediately expire the cookie
-        });
-
+        res.clearCookie('accessToken')
+        
         await t.commit();
 
-        res.status(200).json({ message: "Logout successful." });
+        res.status(200).json({ message: "Logout successful.", logout: true});
     } catch (error) {
         console.error("Failed operation: ", error);
         await t.rollback();
@@ -283,3 +279,89 @@ exports.validateSession = (req, res) => {
     });
 };
 
+// Get current user profile
+exports.getMyProfile = async (req, res) => {
+    const userId = req.userId; 
+    try {
+        const user = await db.User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User profile not found." });
+        }
+        res.status(200).json({ message: "User profile retrieved successfully.", user });
+    } catch (error) {
+        res.status(500).json({ message: "Error retrieving user profile", error: error.message });
+    }
+};
+
+
+
+// Get user settings accordingly to query params
+exports.getUserSettings = async (req, res) => {
+    const userId = req.userId; // gotten from verifyToken middleware
+    const type = req.query.type;
+    
+    try {
+        switch (type) {
+            case 'profile':
+            const profileData = await fetchProfileSettings(userId);
+            res.status(200).json(profileData);
+            break;
+            case 'account':
+            const accountData = await fetchAccountSettings(userId);
+            res.status(200).json(accountData);
+            break;
+            case 'notifications':
+            const notificationsData = await fetchNotificationsSettings(userId);
+            res.status(200).json(notificationsData);
+            break;
+            case 'privacy':
+            const privacyData = await fetchPrivacySettings(userId);
+            res.status(200).json(privacyData);
+            break;
+            default:
+            res.status(400).json({ message: "Invalid settings type specified" });
+            break;
+        } 
+    } catch (error) {
+        console.error('Error fetching user settings', error);
+        res.status(500).json({ message: "Error retrieving settings", error: error.message });
+    }
+};
+
+async function fetchProfileSettings(userId) {
+    const userProfile = await db.User.findByPk(userId, {
+        include: [
+            {
+                model: db.Address,
+                as: 'addressDetails',
+                include: [
+                    {
+                        model: db.PostalCode,
+                        as: 'postalCodeDetails'
+                    }
+                ]
+            }
+        ]
+    });
+
+    if (!userProfile) {
+        throw new Error('User not found');
+    }
+
+    // Construct a response object
+    return {
+        username: userProfile.username,
+        email: userProfile.email,
+        profileImage: userProfile.profileImage,
+        about: userProfile.about,
+        defaultLanguage: userProfile.defaultLanguage,
+        address: {
+            streetName: userProfile.addressDetails.streetName,
+            streetNumber: userProfile.addressDetails.streetNumber,
+            postalCode: userProfile.addressDetails.postalCodeDetails.postalCode,
+            locality: userProfile.addressDetails.postalCodeDetails.locality,
+            country: userProfile.addressDetails.postalCodeDetails.country
+        },
+        showCity: userProfile.showCity
+    };
+}

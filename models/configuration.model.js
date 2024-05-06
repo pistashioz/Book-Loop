@@ -18,7 +18,8 @@ module.exports = (sequelize, DataTypes) => {
        }
    }, {
        tableName: 'configuration',
-       timestamps: false // No automatic timestamps
+       timestamps: false, // No automatic timestamps
+       freezeTableName: true, // Ensures table name is not pluralized
    });
    }
    
