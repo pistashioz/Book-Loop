@@ -8,7 +8,13 @@ async function verifyTokenHelper(token) {
     return new Promise((resolve, reject) => {
         jwt.verify(token, config.secret, (err, decoded) => {
             if (err) {
-                reject(err);
+                // Directly decoding the payload if the error is due to token expiration
+                if (err.name === 'TokenExpiredError') {
+                    const decodedPayload = jwt.decode(token, { complete: true });
+                    reject({ ...err, decodedPayload });  // Include decoded payload in rejection
+                } else {
+                    reject(err);
+                }
             } else {
                 resolve(decoded);
             }
@@ -16,9 +22,13 @@ async function verifyTokenHelper(token) {
     });
 }
 
+
+
 // Middleware to verify token validity
 exports.verifyToken = async (req, res, next) => {
-    const token = req.cookies['accessToken']; // Read token from cookie
+    const token = req.cookies['accessToken'];
+    const isLogout = req.path.includes('/logout');  // Check if the request is for logout
+
     if (!token) {
         await invalidateTokenAndSession(req.sessionId, req.userId);
         return res.status(403).send({ message: "No token provided! Please log in again." });
@@ -30,10 +40,21 @@ exports.verifyToken = async (req, res, next) => {
         req.sessionId = decoded.session;
         next();
     } catch (err) {
+        if (err.decodedPayload) { // Check if the decoded payload is available
+            req.userId = err.decodedPayload.payload.id;
+            req.sessionId = err.decodedPayload.payload.session;
+        }
+        
+        console.log(err.name);
         if (err.name === 'TokenExpiredError') {
-            // Attempt to refresh the token
+            console.log('Token expired, attempting to refresh...');
+            // // if logout just go next
+            // if (isLogout) {
+            //     console.log('logout');
+            //     next();
+            // }
             try {
-                const newTokens = await exports.refreshTokens(req.userId, req.sessionId);
+                const newTokens = await exports.refreshTokens(req.userId, req.sessionId, isLogout);
                 res.cookie('accessToken', newTokens.accessToken, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV !== 'development',
@@ -46,10 +67,11 @@ exports.verifyToken = async (req, res, next) => {
                 return res.status(401).send({ message: refreshError.message });
             }
         } else {
-            return res.status(401).send({ message: "Unauthorized! Token is invalid." });
+            return res.status(401).send({ message: "Unauthorized!! Token is invalid." });
         }
     }
 };
+
 
 // Invalidate token and update session log
 async function invalidateTokenAndSession(sessionId, userId) {
@@ -59,29 +81,54 @@ async function invalidateTokenAndSession(sessionId, userId) {
     await SessionLog.update({ endTime: new Date() }, { where: { sessionId } });
 }
 
-// Function to issue new JWTs
-exports.issueJWT = async (userId, sessionId) => {
-    const accessToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-        expiresIn: config.jwtExpiration
-    });
-    const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-        expiresIn: config.jwtRefreshExpiration
-    });
-
-    await Token.create({
-        tokenKey: refreshToken,
-        userId,
-        sessionId,
-        tokenType: 'refresh',
-        expiresAt: new Date(Date.now() + config.jwtRefreshExpiration),
-        invalidated: false
-    });
-
-    return { accessToken, refreshToken };
+// Function to only issue an access token
+exports.issueAccessToken = (userId, sessionId) => {
+    try {
+        const accessToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
+            expiresIn: config.jwtExpiration
+        });
+        console.log("Access token signed");
+        return accessToken;
+    } catch (error) {
+        console.error("Error issuing access token:", error);
+        throw new Error("Failed to issue access token.");
+    }
 };
 
+// Asynchronously handle refresh token
+exports.handleRefreshToken = async (userId, sessionId) => {
+
+    try {
+        const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
+            expiresIn: config.jwtRefreshExpiration
+        });
+        console.log("Refresh token signed");
+        
+        await Token.create({
+            tokenKey: refreshToken,
+            userId,
+            sessionId,
+            tokenType: 'refresh',
+            expiresAt: new Date(Date.now() + config.jwtRefreshExpiration),
+            invalidated: false
+        });
+        console.log("Refresh token saved to database");
+    } catch (error) {
+        console.error("Error handling refresh token:", error);
+    }
+};
+
+
+
 // Function to refresh tokens
-exports.refreshTokens = async (userId, sessionId) => {
+exports.refreshTokens = async (userId, sessionId, isLogout = false) => {
+    console.log('Entered refresh tokens function');
+    if (isLogout) {
+        console.error("Logout attempt with expired token, not refreshing tokens.");
+        // if it's a logout attempt, don't refresh tokens
+        return { accessToken: exports.issueAccessToken(userId, sessionId) };
+    }
+
     const refreshTokenRecord = await Token.findOne({
         where: { userId, sessionId, tokenType: 'refresh', invalidated: false }
     });
@@ -97,6 +144,17 @@ exports.refreshTokens = async (userId, sessionId) => {
         throw new Error("Refresh token is invalid or expired. Please log in again.");
     }
 
-    await refreshTokenRecord.update({ invalidated: true });
-    return exports.issueJWT(userId, sessionId);
+    // Invalidate the old refresh token
+    await refreshTokenRecord.update({ invalidated: true, lastUsedAt: new Date() });
+
+    // Issue a new access token
+    const newAccessToken = exports.issueAccessToken(userId, sessionId);
+
+    // Issue a new refresh token asynchronously
+    exports.handleRefreshToken(userId, sessionId).catch(err => {
+        console.error("Failed to issue a new refresh token asynchronously:", err);
+    });
+
+    return { accessToken: newAccessToken };
 };
+

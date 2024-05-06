@@ -5,7 +5,7 @@ const { Op, ValidationError } = require('sequelize');
 
 // Access models through the centralized db object
 const { User, UserConfiguration, Configuration, SessionLog, Token } = db;
-const { issueJWT } = require('../middleware/authJwt'); 
+const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 
 // Retrieve all users
@@ -131,10 +131,10 @@ exports.delete = async (req, res) => {
 // Login action for user
 exports.login = async (req, res) => {
     const { usernameOrEmail, password } = req.body;
-  
+    
     // Start a transaction
     const t = await db.sequelize.transaction();
-
+    
     try {
         // Attempt to find the user by username or email
         const user = await User.findOne({
@@ -145,13 +145,13 @@ exports.login = async (req, res) => {
                 ]
             }
         }, { transaction: t });
-  
+        
         // If no user is found, return a 404 error
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found" });
         }
-  
+        
         // Check if the provided password matches the one stored in the database
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
@@ -159,23 +159,23 @@ exports.login = async (req, res) => {
             await t.rollback();
             return res.status(401).json({ message: "Invalid username or password" });
         }
-
+        
         // Check for existing active sessions with the same device info
         const existingSession = await SessionLog.findOne({
             where: {
                 userId: user.userId,
                 ipAddress: req.ip,  
                 deviceInfo: req.headers['user-agent'],
-                expiredAt: null  
+                endTime: null  
             }
         }, { transaction: t });
-
+        
         if (existingSession) {
             // If an active session exists, deny the new login attempt
             await t.rollback();
             return res.status(409).json({ message: "Active session already exists for this device and browser. Please log out from other sessions or continue using them." });
         }
-
+        
         // Create a session log entry and capture its ID
         const sessionLog = await SessionLog.create({
             userId: user.userId,
@@ -183,18 +183,20 @@ exports.login = async (req, res) => {
             ipAddress: req.ip,  // Obtaining IP address from request
             deviceInfo: req.headers['user-agent']  // Extracting device info from the user-agent header
         }, { transaction: t });
-
+        
         // Generate JWTs using the newly created session log ID
-        const tokens = issueJWT(user.userId, sessionLog.sessionId);  // Pass session ID to the token issuer
-
+        const accessToken = issueAccessToken(user.userId, sessionLog.sessionId);  // Immediate access token issuance
+        handleRefreshToken(user.userId, sessionLog.sessionId);  // Handle refresh token asynchronously
+        console.log(`Generated access token: ${accessToken}`);
+        
         // Set cookie with HttpOnly and Secure flags
-        res.cookie('accessToken', tokens.accessToken, {
+        res.cookie('accessToken', accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV !== 'development',  // Ensure secure in production
             expires: new Date(Date.now() + 3600000),  // 1 hour for example
             sameSite: 'strict'  // This setting can help prevent CSRF attacks
         });
-  
+        
         // If login is successful, commit the transaction and return user info or a token
         await t.commit();
         res.status(200).json({
@@ -202,9 +204,7 @@ exports.login = async (req, res) => {
             user: {
                 id: user.userId,
                 username: user.username,
-                email: user.email,
-                accessToken: tokens.accessToken,
-                refreshToken: tokens.refreshToken
+                email: user.email
             }
         });
     } catch (error) {
@@ -225,7 +225,7 @@ exports.logout = async (req, res) => {
     try {
         // Invalidate the session
         await SessionLog.update({
-            expiredAt: new Date()
+            endTime: new Date()
         }, {
             where: {
                 sessionId: sessionId
@@ -235,7 +235,8 @@ exports.logout = async (req, res) => {
 
         // Invalidate the refresh token
         await Token.update({
-            invalidated: true
+            invalidated: true,
+            lastUsedAt: new Date()
         }, {
             where: {
                 sessionId: sessionId,
@@ -244,6 +245,14 @@ exports.logout = async (req, res) => {
             },
             transaction: t
         });
+
+        // We could delete the session log entry instead of invalidating it
+        // await SessionLog.destroy({
+        //     where: {
+        //         sessionId: sessionId
+        //     },
+        //     transaction: t
+        // });
 
         // Clear the access token cookie
         res.cookie('accessToken', '', {

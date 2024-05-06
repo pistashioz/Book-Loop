@@ -15,10 +15,10 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
-    .then(() => {
+    /*.then(() => {
         console.log('Connection has been established successfully.');
         return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    })
+    }*/
     .then(() => {
         console.log('Database models were synchronized successfully.');
     })
