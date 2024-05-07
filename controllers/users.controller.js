@@ -482,14 +482,8 @@ exports.create = async (req, res) => {
         const userProfile = await db.User.findByPk(userId, {
             include: [
                 {
-                    model: db.Address,
-                    as: 'addressDetails',
-                    include: [
-                        {
-                            model: db.PostalCode,
-                            as: 'postalCodeDetails'
-                        }
-                    ]
+                    model: db.PostalCode,
+                    as: 'postalCodeDetails',
                 }
             ]
         });
@@ -506,11 +500,11 @@ exports.create = async (req, res) => {
             about: userProfile.about,
             defaultLanguage: userProfile.defaultLanguage,
             address: {
-                streetName: userProfile.addressDetails.streetName,
-                streetNumber: userProfile.addressDetails.streetNumber,
-                postalCode: userProfile.addressDetails.postalCodeDetails.postalCode,
-                locality: userProfile.addressDetails.postalCodeDetails.locality,
-                country: userProfile.addressDetails.postalCodeDetails.country
+                streetName: userProfile.street,
+                streetNumber: userProfile.streetNumber,
+                postalCode: userProfile.postalCodeDetails.postalCode,
+                locality: userProfile.postalCodeDetails.locality,
+                country: userProfile.postalCodeDetails.country
             },
             showCity: userProfile.showCity
         };
