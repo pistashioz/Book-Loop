@@ -38,7 +38,7 @@ exports.verifyToken = async (req, res, next) => {
         }); 
         await invalidateTokenAndSession(sessionId, userId);
     } catch (error) {
-        return res.status(403).send({ message: "No token provided! Please log in again." });
+        return res.status(403).send({ message: "No authentication provided! Please log in." });
     }}
     
     try {
@@ -63,7 +63,7 @@ exports.verifyToken = async (req, res, next) => {
                     res.cookie('accessToken', newTokens.accessToken, {
                         httpOnly: true,
                         secure: process.env.NODE_ENV !== 'development',
-                        expires: new Date(dayjs().add(30, 'minute').valueOf()), // Converts to appropriate date format
+                        expires: new Date(dayjs().add(config.jwtExpiration, 'minute').valueOf()), // Converts to appropriate date format
                         sameSite: 'strict'
                     });
                     req.userId = jwt.decode(newTokens.accessToken).id;
@@ -119,12 +119,13 @@ exports.verifyToken = async (req, res, next) => {
 // Function to only issue an access token
 exports.issueAccessToken = (userId, sessionId) => {
     try {
-        const expirationTime = dayjs().add(30, 'minute').unix(); // Expires in 30 minutes
-        const accessToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
+        const expirationMins = config.jwtExpiration;
+        const expirationTime = dayjs().add(expirationMins, 'minute').unix(); // Expires in 30 minutes
+        const token = jwt.sign({ id: userId, session: sessionId }, config.secret, {
             expiresIn: expirationTime
         });
         console.log("Access token signed");
-        return accessToken;
+        return { token, expirationMins };
     } catch (error) {
         console.error("Error issuing access token:", error);
         throw new Error("Failed to issue access token.");
@@ -134,7 +135,7 @@ exports.issueAccessToken = (userId, sessionId) => {
 // Asynchronously handle refresh token
 exports.handleRefreshToken = async (userId, sessionId) => {
     try {
-        const expirationTime = dayjs().add(14, 'day').unix(); // Expires in 14 days
+        const expirationTime = dayjs().add(config.jwtRefreshExpiration, 'day').unix(); // Expires in 14 days
         const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
             expiresIn: expirationTime
         });
@@ -145,7 +146,7 @@ exports.handleRefreshToken = async (userId, sessionId) => {
             userId,
             sessionId,
             tokenType: 'refresh',
-            expiresAt: new Date(dayjs().add(14, 'day').valueOf()),
+            expiresAt: new Date(dayjs().add(config.jwtRefreshExpiration, 'day').valueOf()),
             invalidated: false
         });
         console.log("Refresh token saved to database");

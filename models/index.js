@@ -55,11 +55,11 @@ db.Token.belongsTo(db.User, { foreignKey: 'userId' });
 db.SessionLog.hasMany(db.Token, { foreignKey: 'sessionId', onDelete: 'CASCADE' });
 db.Token.belongsTo(db.SessionLog, { foreignKey: 'sessionId' });
 
-db.Address.belongsTo(db.PostalCode, { foreignKey: 'postalCode' });
-db.PostalCode.hasMany(db.Address, {
-    foreignKey: 'postalCode',
-    onDelete: 'RESTRICT'  // Prevents deletion of the postal code if there are associated addresses
-  });
-db.User.belongsTo(db.Address, { foreignKey: 'userId' });
+db.User.belongsTo(db.Address, { foreignKey: 'addressId', as: 'addressDetails' });
+db.Address.hasMany(db.User, { foreignKey: 'addressId', as: 'users' });
+
+db.Address.belongsTo(db.PostalCode, { foreignKey: 'postalCode', as: 'postalCodeDetails' });
+db.PostalCode.hasMany(db.Address, { foreignKey: 'postalCode', as: 'addresses', onDelete: 'RESTRICT' });
+
 
 module.exports = db;

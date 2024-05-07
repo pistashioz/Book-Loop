@@ -188,12 +188,12 @@ exports.login = async (req, res) => {
         // Generate JWTs using the newly created session log ID
         const accessToken = issueAccessToken(user.userId, sessionLog.sessionId);  // Immediate access token issuance
         handleRefreshToken(user.userId, sessionLog.sessionId);  // Handle refresh token asynchronously
-        
+      
         // Set cookie with HttpOnly and Secure flags
-        res.cookie('accessToken', accessToken, {
+        res.cookie('accessToken', accessToken.token, {
             httpOnly: true,
             secure: process.env.NODE_ENV !== 'development',
-            expires: new Date(dayjs().add(30, 'minute').valueOf()), // Converts to appropriate date format
+            expires: new Date(dayjs().add(accessToken.expirationMins, 'minute').valueOf()), // Converts to appropriate date format
             sameSite: 'strict'
         });
         
@@ -279,7 +279,7 @@ exports.validateSession = (req, res) => {
     });
 };
 
-// Get current user profile
+/* // Get current user profile
 exports.getMyProfile = async (req, res) => {
     const userId = req.userId; 
     try {
@@ -291,8 +291,65 @@ exports.getMyProfile = async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: "Error retrieving user profile", error: error.message });
     }
-};
+}; */
 
+// Update or create a user address and corresponding postal code
+exports.updateUserAddress = async (req, res) => {
+    const userId = req.userId;  // Set by verifyToken middleware
+    const { streetName, streetNumber, postalCode, locality, country } = req.body;
+
+    // Start a transaction
+    const t = await db.sequelize.transaction();
+
+    try {
+        // Check or create the postalCode
+        const [postalCodeRecord, postalCodeCreated] = await db.PostalCode.findOrCreate({
+            where: { postalCode },
+            defaults: { postalCode, locality, country },
+            transaction: t
+        });
+
+        if (postalCodeCreated) {
+            console.log('Postal code created:', postalCodeRecord);
+        }
+
+        // Find or create the address with the postalCode
+        const [address, addressCreated] = await db.Address.findOrCreate({
+            where: { streetName, streetNumber, postalCode },
+            defaults: { streetName, streetNumber, postalCode },
+            transaction: t
+        });
+
+        // Associate address with the user
+        const user = await db.User.findByPk(userId, { transaction: t });
+        if (!user) {
+            await t.rollback();
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        user.addressId = address.addressId;
+        await user.save({ transaction: t });
+
+        // Commit the transaction
+        await t.commit();
+
+        res.status(200).json({
+            message: "Address updated successfully",
+            address: { streetName, streetNumber, postalCode, locality, country }
+        });
+    } catch (error) {
+        // Rollback the transaction in case of error
+        await t.rollback();
+        if (error instanceof ValidationError) {
+            return res.status(400).json({
+                message: "Validation error",
+                errors: error.errors.map(e => e.message)
+            });
+        }
+        console.error("Error updating address:", error);
+        res.status(500).json({ message: "Error updating address", error: error.message });
+    }
+};
 
 
 // Get user settings accordingly to query params

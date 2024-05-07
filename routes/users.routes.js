@@ -14,8 +14,10 @@ router.use((req, res, next) => {
 });
 
 // Define specific routes for "me" to handle profile or settings access
-router.get('/me', verifyToken, usersController.getMyProfile);
+// router.get('/me', verifyToken, usersController.getMyProfile);
 router.get('/me/settings', verifyToken, usersController.getUserSettings);
+router.patch('/me/address', verifyToken, usersController.updateUserAddress);
+
 
 // General user routes
 router.route('/')
