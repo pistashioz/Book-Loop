@@ -18,7 +18,7 @@ sequelize.authenticate()
 /*     .then(() => {
         console.log('Connection has been established successfully.');
         return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    }) */
+    })  */ 
     .then(() => {
         console.log('Database models were synchronized successfully.');
     })
@@ -35,7 +35,7 @@ db.UserConfiguration = require('./userConfiguration.model.js')(sequelize, DataTy
 db.Configuration = require('./configuration.model.js')(sequelize, DataTypes);
 db.SessionLog = require('./sessionLog.model.js')(sequelize, DataTypes);
 db.Token = require('./token.model.js')(sequelize, DataTypes);
-db.Address = require('./address.model.js')(sequelize, DataTypes);
+// db.Address = require('./address.model.js')(sequelize, DataTypes);
 db.PostalCode = require('./postalCode.model.js')(sequelize, DataTypes);
 
 
@@ -55,11 +55,8 @@ db.Token.belongsTo(db.User, { foreignKey: 'userId' });
 db.SessionLog.hasMany(db.Token, { foreignKey: 'sessionId', onDelete: 'CASCADE' });
 db.Token.belongsTo(db.SessionLog, { foreignKey: 'sessionId' });
 
-db.User.belongsTo(db.Address, { foreignKey: 'addressId', as: 'addressDetails' });
-db.Address.hasMany(db.User, { foreignKey: 'addressId', as: 'users' });
-
-db.Address.belongsTo(db.PostalCode, { foreignKey: 'postalCode', as: 'postalCodeDetails' });
-db.PostalCode.hasMany(db.Address, { foreignKey: 'postalCode', as: 'addresses', onDelete: 'RESTRICT' });
+db.User.belongsTo(db.PostalCode, { foreignKey: 'postalCode', as: 'postalCodeDetails' });
+db.PostalCode.hasMany(db.User, { foreignKey: 'postalCode', as: 'users', onDelete: 'RESTRICT' });
 
 
 module.exports = db;

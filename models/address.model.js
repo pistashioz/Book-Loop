@@ -1,3 +1,5 @@
+// DROPPED! - this table is not used anymore.
+
 module.exports = (sequelize, DataTypes) => {
     const Address = sequelize.define('Address', {
         addressId: {
