@@ -7,8 +7,19 @@ const LiteraryComments = db.commentReview
 const { ValidationError, ForeignKeyConstraintError, Op  } = require('sequelize'); //necessary for model validations using sequelize
 exports.findAll = async (req, res) => {
     try {
-        const works = await Work.findAll(); // Wait for the promise to resolve
-        return res.status(200).send(works);
+        const works = await Work.findAll({raw: true}); // Wait for the promise to resolve
+        works.forEach(work => {
+            work.links = [
+                { "rel": "self", "href": `/works/${work.workId}`, "method": "GET" },
+                { "rel": "delete", "href": `/works/${work.workId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/works/${work.workId}`, "method": "PUT" },
+            ]
+        })
+        return res.status(200).json({
+            success: true,
+            data: works,
+            links: [{ "rel": "add-work", "href": `/work`, "method": "POST" }]
+        });
     }
     catch (error) {
         return res.status(400).send({
@@ -31,22 +42,45 @@ exports.create = async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'New work created successfully',
-            work: newWork
+            work: newWork,
+            links: [
+                { "rel": "self", "href": `/works/${newWork.workId}`, "method": "GET" },
+                { "rel": "delete", "href": `/works/${newWork.workId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/works/${newWork.workId}`, "method": "PUT" },
+            ]
         });
     } catch (error) {
-        res.status(400).json({
-            success: false,
-            message: error.message || 'Failed to create new work'
-        });
+        if (err instanceof ValidationError)
+            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+        else
+            res.status(500).json({
+                success: false, msg: err.message || "Some error occurred while creating the work."
+            });
     }
 }
 exports.findWork = async(req, res) => {
     try{
-        const workId = req.params.workId
-        const found = await Work.findOne({where:{workId}})
-        if(!found)
-            throw new Error('No work with that ID')
-        return res.status(200).json(found)
+        let work = await Work.findByPk(req.params.workId, {
+            include: [{
+                model: db.bookEdition,
+                attributes: ['ISBN', 'title', 'synopsis']
+            }]
+        })
+        if (work === null){
+            return res.status(404).json({
+                success: false,
+                msg: `No work found with id ${req.params.workId}`
+            })
+        }
+        return res.json({
+            success: true, 
+            data:work,
+            links:  [
+                { "rel": "self", "href": `/works/${work.workId}`, "method": "GET" },
+                { "rel": "delete", "href": `/works/${work.workId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/works/${work.workId}`, "method": "PUT" },
+            ],
+        })
     } catch(err) {
         return  res.status(400).json({message: err.message || "Some error ocurred"})
     }
@@ -54,40 +88,43 @@ exports.findWork = async(req, res) => {
 
 exports.updateWorkById = async (req, res) => {
     try {
-        const workId = req.params.workId
-        const updatedData = req.body
-        const found = await Work.findOne({where:{workId}}) //let tutorial = findByPk(req.params.id)
-        if(!found){
-            res.status(404).json({
-                success: false,
-                message: "Work not found."
-            });
+        let affectedRows = await Work.update(req.body, {where: {workId:req.params.workId}})
+        if (affectedRows[0] === 0){
+            return res.status(200).json({
+                success:true,
+                msg: `No updates were made on work with ID ${req.params.workId}`
+            })
         }
-        /*
-        
-        */ 
-        await Work.update(updatedData, {where: {workId}})
-        res.status(200).json({message: "Work data updated successfully", work: updatedData})
+        return res.json({
+            success: true,
+            msg: `Work with ID ${req.params.workId} was updated successfully.`
+        });
         
     }
     catch(err) {
-        return res.status(400).json({message: err.message || 'Invalid or incomplete data provided.'});
+        if (err instanceof ValidationError)
+            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+        else
+            res.status(500).json({
+                success: false, msg: err.message || "Some error occurred while updating the work."
+            });
     }
 }
 
 exports.removeWorkById = async (req, res) => {
     try {
         const workId = req.params.workId
-        const found = await Work.findOne({where:{workId}})
-        if(!found){
-            res.status(404).json({
-                success: false,
-                message: "Work not found."
+        const found = await Work.destroy({where:{workId}})
+        console.log(found)
+        if(found === 1){
+            return res.status(204).json({
+                success: true, 
+                msg: `Work with id ${workId} was successfully deleted!`
             });
         }
-        await Work.destroy({where: {workId}})
-        res.status(204).json({message: "Work delete successfully"})
-        
+        return res.status(404).json({
+            success: false, msg: `Cannot find any work with ID ${workId}`
+        })
     }
     catch(err) {
         return res.status(400).json({message: err.message || 'Invalid or incomplete data provided.'});
@@ -101,11 +138,9 @@ exports.getEditions = async (req, res) => {
       if (!workId) {
         return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
       }
-      console.log('here')
       const foundEditions = await BookEdition.findAll({
         where: { workId: { [Op.eq]: workId } } 
     })
-    console.log('nop')
       if (foundEditions.length === 0) {
         return res.status(404).json({ success: false, message: "No book editions found for this work" });
       }
@@ -117,7 +152,6 @@ exports.getEditions = async (req, res) => {
   exports.addEdition = async (req, res) => {
     try {
         const { workId } = req.params; 
-        console.log('WORKID: ', workId)
         if (!workId) {
             return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
         }

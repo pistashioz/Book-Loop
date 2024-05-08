@@ -40,13 +40,13 @@ db.bookEdition.belongsTo(db.work, {
 db.work.belongsTo(db.bookInSeries, {
     foreignKey: 'seriesId'
 })
-db.bookInSeries.hasMany(bd.work, {
+db.bookInSeries.hasMany(db.work, {
     foreignKey: "seriesId"
 })
-db.bookEdition.bookEdition(db.publisher, {
+db.bookEdition.belongsTo(db.publisher, {
     foreignKey: "publisherId"
 })
-db.publisher.belongsToMany(db.bookEdition, {
+db.publisher.hasMany(db.bookEdition, {
     foreignKey: "publisherId"
 })
 
