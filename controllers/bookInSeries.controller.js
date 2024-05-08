@@ -38,14 +38,9 @@ exports.findAll = async (req, res) => {
 }
 exports.create = async (req, res) => {
     try {
-        const { seriesId } = req.body; 
-        console.log(req.body)
-        if (!parseInt(seriesId)) {
-            return res.status(400).json({ error: "Invalid series ID" });
-        }
         const newBookInSeries = await BookInSeries.create(req.body);
         console.log('NEW BOOK:', newBookInSeries)
-        res.status(201).json({success: true, msg: 'New Series created', URL: `/book-in-series/${newBookInSeries.seriesId}`});
+        res.status(201).json({success: true, msg: 'New Series created'});
     } catch(err) {
         if (err instanceof ValidationError) {
             res.status(400).json({success: false, message: err.errors.map(e => e.message)})

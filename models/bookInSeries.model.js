@@ -3,9 +3,10 @@ module.exports = (sequelize, DataTypes) => {
         seriesId: {
             type: DataTypes.INTEGER(11),
             primaryKey: true,
-            autoIncrement: true,
-            allowNull: false,
-            validate: { notNull: { msg: "seriesId can not be empty!" } }
+            references: {
+                model: "bookInSeries",
+                key: "seriesId"
+            }
         },
         seriesName: {
             type: DataTypes.STRING,

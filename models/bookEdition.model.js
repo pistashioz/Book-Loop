@@ -5,20 +5,25 @@ module.exports = (sequelize, DataTypes) => {
             primaryKey: true,
             collate: 'utf8mb4_general_ci', 
             allowNull: false,
+            unique: true,
             validate: { notNull: { msg: "ISBN can not be empty!" } }
         },
         workId: {
             type: DataTypes.INTEGER(11),
             allowNull: false,
             primaryKey: true,
-            validate: { notNull: { msg: "workId can not be empty!" } }
+            validate: { notNull: { msg: "workId can not be empty!" } },
+            references: {
+                model: 'work',
+                key: 'workId' 
+              }
         },
         publisherId: {
             type: DataTypes.INTEGER(11),
             allowNull: false,
             validate: { notNull: { msg: "PublisherId can not be empty!" } },
             references: {
-                model: 'Publisher',
+                model: 'publisher',
                 key: 'publisherId' 
               }
         },

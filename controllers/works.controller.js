@@ -3,6 +3,7 @@ const Work = db.work;
 const Person = db.person
 const BookEdition = db.bookEdition;
 const LiteraryReview = db.literaryReview;
+const LiteraryComments = db.commentReview
 const { ValidationError, ForeignKeyConstraintError, Op  } = require('sequelize'); //necessary for model validations using sequelize
 exports.findAll = async (req, res) => {
     try {
@@ -100,9 +101,11 @@ exports.getEditions = async (req, res) => {
       if (!workId) {
         return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
       }
+      console.log('here')
       const foundEditions = await BookEdition.findAll({
         where: { workId: { [Op.eq]: workId } } 
-      });
+    })
+    console.log('nop')
       if (foundEditions.length === 0) {
         return res.status(404).json({ success: false, message: "No book editions found for this work" });
       }
@@ -111,7 +114,6 @@ exports.getEditions = async (req, res) => {
       return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving book editions" });
     }
   }
-//ESTA A DAR ERRO!!!!!!! PERGUNTAR À PROF, NO POST NÃO COLOCAR O WORK ID
   exports.addEdition = async (req, res) => {
     try {
         const { workId } = req.params; 
@@ -131,8 +133,7 @@ exports.getEditions = async (req, res) => {
 
         const { ISBN, publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = req.body;
         const publicationDateObj = new Date(publicationDate);
-        console.log(typeof(ISBN),typeof(publisherId), typeof(title), typeof(synopsis), typeof(editionType), typeof(publicationDateObj), typeof(language), typeof(pageNumber), typeof(coverImage))
-        
+
         const newBookEdition = await BookEdition.create({ ISBN, workId: workIdInt, publisherId, title, synopsis, editionType, publicationDate: publicationDateObj, language, pageNumber, coverImage });
 
         res.status(201).json({
@@ -141,24 +142,6 @@ exports.getEditions = async (req, res) => {
             book: newBookEdition
         });
         console.log('NEW BOOK EDITION',newBookEdition)
-         /*
-      
-        req.body.workId = foundWork.workId; 
-        console.log('Full Request Body:', req.body);
-       
-        const newBookEdition = await BookEdition.create({bookEditionId, workId, publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage});
-        console.log('NEW BOOK EDITION:', newBookEdition)
-
-    
-        const existingEdition = await BookEdition.findOne({where: {ISBN: req.body.bookEditionId}})
-        if (existingEdition){
-            return res.status(400).json({success: false, message: "This edition already exists in this work"})
-        }
-        else if (err instanceof ForeignKeyConstraintError) {
-            res.status(400).json({ success: false, message: "Invalid Publisher ID provided" }); 
-        } 
-        res.status(201).json({success: true, msg: 'New Book Edition created', URL: `/book-editions/${newBookEdition.ISBN}`});
-        */
     }
     catch (err) {
         console.log(err)
@@ -236,3 +219,224 @@ Executing (default): UPDATE `bookEdition` SET `ISBN`=?,`workId`=?,`publisherId`=
     }
   }
 
+exports.getReviews = async (req, res) => {
+    try {
+        let reviews = await LiteraryReview.findAll({
+            where: { // Add both conditions
+                workId: { [Op.eq]: req.params.workId }
+            },
+            raw: true 
+        })
+        reviews.forEach(review => {
+            review.links = [
+                { "rel": "self", "href": `/works/${review.workId}/reviews/${review.literaryReviewId}`, "method": "GET" },
+                { "rel": "delete", "href": `/works/${review.workId}/reviews/${review.literaryReviewId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/works/${review.workId}/reviews/${review.literaryReviewId}`, "method": "PUT" },
+            ]
+        })
+        res.status(200).json({
+            success: true,
+            data: reviews,
+            links: [{ "rel": "add-literary-review", "href": `/works/${req.params.workId}/reviews/`, "method": "POST" }] 
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: err.message || "Some error occurred while retrieving the reviews."
+        })
+    }
+}
+exports.addReview = async (req, res) => {
+    try{
+        let work = await Work.findByPk(req.params.workId)
+        console.log('work:', work)
+        if (work === null){
+            return res.status(404).json({success:false,msg:`No work found with id ${req.params.workId}`})
+        }
+        let review = req.body
+        console.log('review:' , review)
+        const newReview = await LiteraryReview.create({
+            workId: req.params.workId,
+            userId: req.body.userId,
+            LiteraryReview: req.body.LiteraryReview,
+            literaryRating: req.body.literaryRating
+        });
+
+        return res.status(201).json({
+            success: true,
+            msg: `Review created successfully`,
+            data: newReview 
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: `Error adding review ${req.body}.`
+        });
+    }
+}
+exports.updateReview = async(req, res) => {
+    try{
+        let affectedRows = await LiteraryReview.update(req.body, {where: {literaryReviewId: req.params.literaryReviewId}})
+        if (affectedRows[0] === 0){
+            return res.status(200).json({
+                success: true,
+                msg: `No updates were made on review with ID ${req.params.literaryReviewId}.`
+            })
+        }
+        return res.json({
+            success: true,
+            msg: `Review with ID ${req.params.literaryReviewId} was updated successfully.`
+        })
+    }
+    catch(err){
+        if (err instanceof ValidationError)
+            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+        else
+            res.status(500).json({
+                success: false, msg: err.message || "Some error occurred while updating the review."
+            });
+    }
+}
+
+exports.getReview = async(req, res) => {
+    try{
+        const review = await LiteraryReview.findOne({ 
+            where: {  
+                literaryReviewId: req.params.literaryReviewId  
+            } ,
+            raw: true 
+        });
+        if (!review){
+            return res.status(404).json({ success: false, message: "Review not found" });
+        }
+        res.status(200).json({
+            success: true,
+            data: review,
+            links: [{ "rel": "add-review", "href": `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}`, "method": "POST" }] 
+        });
+    }
+    catch(err){
+        return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the review" });
+    }
+  }
+exports.deleteReview = async(req, res)=>{
+    try {
+        let result = await db.literaryReview.destroy({where: {literaryReviewId: req.params.literaryReviewId }})
+        if (result === 1){
+            return res.status(200).json({
+                success: true, 
+                msg: `Review with id ${req.params.literaryReviewId} was successfully deleted!`
+            });
+        }
+        return res.status(404).json({
+            success: false, msg: `Cannot find any review with ID ${req.params.literaryReviewId}`
+        })
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: `Error deleting tutorial with ID ${req.params.idT}.`
+        });
+    };  
+}
+exports.getReviewsComments = async(req, res)=>{
+    try {
+        let comments = await LiteraryComments.findAll({
+            where: {
+                literaryReviewId: {[Op.eq]: req.params.literaryReviewId}
+            },
+            raw: true 
+        })
+        comments.forEach(comment => {
+            comment.links = [
+                { "rel": "self", "href": `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, "method": "GET" },
+                { "rel": "delete", "href": `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, "method": "PUT" },
+            ]
+        })
+        res.status(200).json({
+            success: true,
+            data: comments,
+            links: [{ "rel": "add-comment-review", "href": `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments`, "method": "POST" }] 
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: err.message || "Some error occurred while retrieving the comments."
+        })
+    }
+}
+
+exports.addCommentToReview = async (req, res) => {
+    try{
+        let work = await Work.findByPk(req.params.workId)
+        let review = await LiteraryReview.findByPk(req.params.literaryReviewId)
+        console.log('work:',work)
+        console.log('review: ',review)
+        if (work === null || review === null){
+            return res.status(404).json({success:false,msg:`No work found with id ${req.params.workId}`})
+        }
+        let comment = req.body
+        console.log('comment:' , comment)
+        console.log(Work)
+        const newComment = await LiteraryComments.create({
+            workId: req.params.workId,
+            literaryReviewId: req.params.literaryReviewId,
+            userId: req.body.userId,
+            comment: req.body.comment,
+        });
+        console.log(newComment)
+        return res.status(201).json({
+            success: true,
+            msg: `Comment created successfully`,
+            data: newComment 
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: `Error adding comment ${req.body}.`
+        });
+    }
+}
+exports.editCommentOfReview = async(req, res) => {
+    try{
+        let affectedRows = await LiteraryComments.update(req.body, {where: {commentId: req.params.commentId}})
+        if (affectedRows[0] === 0){
+            return res.status(200).json({
+                success: true,
+                msg: `No updates were made on tutorial with ID ${req.params.commentId}.`
+            })
+        }
+        return res.json({
+            success: true,
+            msg: `Comment with ID ${req.params.commentId} was updated successfully.`
+        })
+    }
+    catch(err){
+        if (err instanceof ValidationError)
+            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+        else
+            res.status(500).json({
+                success: false, msg: err.message || "Some error occurred while updating the comment."
+            });
+    }
+}
+
+exports.removeCommentFromReview = async(req, res) => {
+    try {
+        let result = await LiteraryComments.destroy({where: {commentId: req.params.commentId}})
+        if (result === 1){
+            return res.status(200).json({
+                success: true, 
+                msg: `Comment with ID ${req.params.commentId} was successfully deleted!`
+            });
+        }
+        return res.status(404).json({
+            success: false, msg: `Cannot find any comment with ID ${req.params.commentId}`
+        })
+    }
+    catch (err) {
+        res.status(500).json({
+            success: false, msg: `Error deleting comment with ID ${req.params.commentId}.`
+        });
+    };
+}

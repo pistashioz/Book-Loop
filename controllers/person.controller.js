@@ -18,8 +18,8 @@ exports.findAll = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const { roles } = req.body; 
-        if (roles !== 'translator' || roles !== 'author'){
-            return res.status(400).json({ error: "Invalid role" });
+        if (roles.toLowerCase() !== 'translator' && roles.toLowerCase() !== 'author') {
+            return res.status(400).json({ error: "Invalid role" }); 
         }
         const newPerson = await Person.create(req.body);
         console.log('NEW AUTHOR:', newPerson)

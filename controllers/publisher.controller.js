@@ -39,11 +39,6 @@ exports.findPublishersWorks = async (req, res) => {
 }
 exports.create = async (req, res) => {
     try {
-        const { publisherId } = req.body; 
-        console.log(req.body)
-        if (!parseInt(publisherId)) {
-            return res.status(400).json({ error: "Invalid publisher ID" });
-        }
         const newPublisher = await Publisher.create(req.body);
         console.log('NEW PUBLISHER:', newPublisher)
         res.status(201).json({success: true, msg: 'New Publisher created', URL: `/book-in-series/${newPublisher.publisherId}`});

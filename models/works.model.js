@@ -3,9 +3,11 @@ module.exports = (sequelize, DataTypes) => {
         workId: {
             type: DataTypes.INTEGER(11),
             primaryKey: true,
+            references: {
+                model: "work",
+                key: "workId"
+            },
             autoIncrement: true,
-            allowNull: false,
-            validate: { notNull: { msg: "workId can not be empty!" } }
         },
         originalTitle: {
             type: DataTypes.STRING,

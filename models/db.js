@@ -19,25 +19,38 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 })();
 
 const db = {}; //object to be exported
-const WorkModel = require("./works.model.js");
-db.work = WorkModel(sequelize, DataTypes);
+db.sequelize = sequelize
+db.work  = require("./works.model.js")(sequelize, DataTypes);
+db.bookInSeries = require("./bookInSeries.model.js")(sequelize, DataTypes);
+db.bookEdition = require("./bookEdition.model.js")(sequelize, DataTypes);
+db.publisher =  require("./publisher.model.js")(sequelize,DataTypes);
+db.person = require("./person.model.js")(sequelize,DataTypes);
+db.literaryReview = require("./literaryReview.model.js")(sequelize, DataTypes)
+db.commentReview = require("./commentReview.model.js")(sequelize, DataTypes)
+//defining associations
 
-const BookInSeriesModel = require("./bookInSeries.model.js");
-db.bookInSeries = BookInSeriesModel(sequelize, DataTypes);
+db.work.hasMany(db.bookEdition, { 
+    foreignKey: 'workId' 
+}) 
 
-const BookEditionModel = require("./bookEdition.model.js");
-db.bookEdition = BookEditionModel(sequelize, DataTypes);
+db.bookEdition.belongsTo(db.work, { 
+    foreignKey: 'workId'
+}) 
 
-const PublisherModel =  require("./publisher.model.js")
-db.publisher = PublisherModel(sequelize,DataTypes);
-
-const PersonModel = require("./person.model.js")
-db.person=PersonModel(sequelize,DataTypes);
+db.work.belongsTo(db.bookInSeries, {
+    foreignKey: 'seriesId'
+})
+db.bookInSeries.hasMany(bd.work, {
+    foreignKey: "seriesId"
+})
+db.bookEdition.bookEdition(db.publisher, {
+    foreignKey: "publisherId"
+})
+db.publisher.belongsToMany(db.bookEdition, {
+    foreignKey: "publisherId"
+})
 
 /*
-const LiteraryReviewModel = require("./literaryReview.model.js")
-db.literaryReview = LiteraryReviewModel(sequelize, DataTypes)
-*/
 (async () => {
     try {
         await db.sequelize.sync();
@@ -45,5 +58,5 @@ db.literaryReview = LiteraryReviewModel(sequelize, DataTypes)
     } catch (error) {
         console.log(error)
     }
-})();
+})();*/
 module.exports = db;

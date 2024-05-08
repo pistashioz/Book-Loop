@@ -3,10 +3,12 @@ module.exports = (sequelize, DataTypes) => {
         publisherId: {
             type: DataTypes.INTEGER(11),
             primaryKey: true,
+            references: {
+                model: "publisher",
+                key: "publisherId"
+            },
             autoIncrement: true,
             collate: 'utf8mb4_general_ci', 
-            allowNull: false,
-            validate: { notNull: { msg: "Publisher ID can not be empty!" } }
         },
         publisherName: {
             type: DataTypes.STRING,
