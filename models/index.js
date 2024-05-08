@@ -15,10 +15,10 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
-/*     .then(() => {
+/*      .then(() => {
         console.log('Connection has been established successfully.');
         return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    })  */ 
+    })   */
     .then(() => {
         console.log('Database models were synchronized successfully.');
     })
@@ -37,6 +37,7 @@ db.SessionLog = require('./sessionLog.model.js')(sequelize, DataTypes);
 db.Token = require('./token.model.js')(sequelize, DataTypes);
 // db.Address = require('./address.model.js')(sequelize, DataTypes);
 db.PostalCode = require('./postalCode.model.js')(sequelize, DataTypes);
+db.UserSocialMedia = require('./userSocialMedia.model.js')(sequelize, DataTypes);
 
 
 // Define relationships
@@ -58,5 +59,7 @@ db.Token.belongsTo(db.SessionLog, { foreignKey: 'sessionId' });
 db.User.belongsTo(db.PostalCode, { foreignKey: 'postalCode', as: 'postalCodeDetails' });
 db.PostalCode.hasMany(db.User, { foreignKey: 'postalCode', as: 'users', onDelete: 'RESTRICT' });
 
+db.User.hasMany(db.UserSocialMedia, { foreignKey: 'userId', as: 'userSocialMedias', onDelete: 'CASCADE' });
+db.UserSocialMedia.belongsTo(db.User, { foreignKey: 'userId' });
 
 module.exports = db;
