@@ -193,9 +193,18 @@ exports.login = async (req, res) => {
         res.cookie('accessToken', accessToken.token, {
             httpOnly: true,
             secure: process.env.NODE_ENV !== 'development',
-            expires: new Date(dayjs().add(accessToken.expirationMins, 'minute').valueOf()), // Converts to appropriate date format
+            expires: new Date(dayjs().add(accessToken.expirationMins, 'ms').valueOf()), // Converts to appropriate date format
             sameSite: 'strict'
         });
+        
+/*         console.log(`refreshToken: ${refreshToken.token} and expires in ${refreshToken.expirationTime} seconds`);
+        res.cookie('refreshToken', refreshToken.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV!== 'development',
+            expires: new Date(dayjs().add(refreshToken.expirationTime, 'seconds').valueOf()), // Converts to appropriate date format
+            sameSite: 'strict',
+            path: '/refresh'
+        }); */
         
         // If login is successful, commit the transaction and return user info or a token
         await t.commit();
@@ -278,106 +287,7 @@ exports.validateSession = (req, res) => {
         }
     });
 };
-    
-    /* // Get current user profile
-    exports.getMyProfile = async (req, res) => {
-        const userId = req.userId; 
-        try {
-            const user = await db.User.findByPk(userId);
-            if (!user) {
-                return res.status(404).json({ message: "User profile not found." });
-            }
-            res.status(200).json({ message: "User profile retrieved successfully.", user });
-        } catch (error) {
-            res.status(500).json({ message: "Error retrieving user profile", error: error.message });
-        }
-    }; */
-    
-    /* // Update or create a user address and corresponding postal code
-    exports.updateUserAddress = async (req, res) => {
-        const userId = req.userId;  // from middleware
-        const { street, streetNumber, postalCode, locality, country } = req.body;
-        
-        console.log(req.body);
-        
-        const t = await db.sequelize.transaction();
-        try {
-            // Check if all or none of the address fields are provided
-            const addressFields = [street, streetNumber, postalCode];
-            const allFieldsProvided = addressFields.every(field => field !== undefined);
-            const noFieldsProvided = addressFields.every(field => field === undefined);
-            
-            if (!allFieldsProvided && !noFieldsProvided) {
-                await t.rollback();
-                return res.status(400).json({ message: "All address fields must be provided together." });
-            }
-            
-            // If updating or setting address, ensure all fields are provided
-            if (allFieldsProvided) {
-                if (!locality || !country) {
-                    await t.rollback();
-                    return res.status(400).json({ message: "Both locality and country must be provided with postal code." });
-                }
-                
-                // Handle postal code creation or update
-                const [postalCodeRecord, postalCodeCreated] = await PostalCode.findOrCreate({
-                    where: { postalCode },
-                    defaults: { locality, country },
-                    transaction: t
-                });
-                
-                if (!postalCodeCreated) {
-                    await postalCodeRecord.update({ locality, country }, { transaction: t });
-                }
-                console.log(`postalrecord is ${postalCodeRecord}, postalCodeCreated is ${postalCodeCreated}`);
-            }
-            
-            console.log(`postalcode is ${postalCode}, locality is ${locality}, country is ${country}`);
-            
-            // Update user details
-            const userData = {};
-            if (allFieldsProvided) {
-                userData.street = street;
-                userData.streetNumber = streetNumber;
-                userData.postalCode = postalCode;
-            }
-            
-            console.log(`userdata is ${userData}, its street is ${userData.street}, its streetNumber is ${userData.streetNumber}, its postalCode is ${userData.postalCode}`);
-            const user = await User.findByPk(userId, { transaction: t });
-            if (!user) {
-                await t.rollback();
-                return res.status(404).json({ message: "User not found." });
-            }
-            str = JSON.stringify(userData);
-            console.log(`user is ${str}`);
-            
-            await user.update(userData, { transaction: t });
-            console.log(`userfound is ${user}, user.street is ${user.street}, user.streetNumber is ${user.streetNumber}, and postalcode is ${user.postalCode}`);
-            await t.commit();
-            return res.status(200).json({
-                message: "User address updated successfully",
-                user: {
-                    street: user.street,
-                    streetNumber: user.streetNumber,
-                    postalCode: user.postalCode,
-                    locality: postalCodeRecord ? postalCodeRecord.locality : null,
-                    country: postalCodeRecord ? postalCodeRecord.country : null
-                }
-            });
-            
-        } catch (error) {
-            await t.rollback();
-            if (error instanceof ValidationError) {
-                return res.status(400).json({
-                    message: "Validation error",
-                    errors: error.errors.map(e => e.message)
-                });
-            }
-            console.error("Error updating user address:", error);
-            return res.status(500).json({ message: "Error updating user address", error: error.message });
-        }
-    };
-    */
+
     
 // Update or create a user address and corresponding postal code
 exports.updateUserAddress = async (req, res) => {
@@ -450,9 +360,7 @@ exports.updateUserAddress = async (req, res) => {
         return res.status(500).json({ message: "Error updating user address", error: error.message });
     }
 };
-    
-    
-    
+       
 // Get user settings accordingly to query params
 exports.getUserSettings = async (req, res) => {
     const userId = req.userId; // gotten from verifyToken middleware
@@ -622,23 +530,33 @@ async function updateProfileSettings(userId, body) {
     
 // Update user account settings
 async function updateAccountSettings(userId, body) {
-    const { email, username, name, birthdayDate, holidayMode } = body;
-    let t; // Transaction object
+    const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
+    let t;
 
     try {
         t = await db.sequelize.transaction();
-        
+
         const user = await db.User.findByPk(userId, { transaction: t });
-        
         if (!user) {
             await t.rollback();
             return { status: 404, data: { message: "User not found." } };
         }
+        console.log(`currentPassword: ${currentPassword}, newPassword: ${newPassword}, confirmPassword: ${confirmPassword}`);
+        // Verify current password before allowing update
+        if ((currentPassword) && newPassword && confirmPassword) {
+            if (!await user.validPassword(currentPassword)) {
+                await t.rollback();
+                return { status: 401, data: { message: "Invalid current password." } };
+            }
+            if (newPassword !== confirmPassword) {
+                await t.rollback();
+                return { status: 400, data: { message: "New passwords do not match." } };
+            }
 
-        // Check if the email has changed
+            user.password = newPassword;  // Triggers password hash hook
+        }
+
         let isEmailChanged = email && email !== user.email;
-
-        // Update user details within the transaction
         const updateData = {
             email: email || user.email,
             username: username || user.username,
@@ -648,13 +566,17 @@ async function updateAccountSettings(userId, body) {
             isVerified: isEmailChanged ? false : user.isVerified
         };
 
-        // Perform update
         await user.update(updateData, { transaction: t });
-        
-        if (isEmailChanged) {
-            sendVerificationEmail(user.email);  
+
+        if (newPassword) {
+            // Trigger global logout when password changes
+            await logoutUserSessions(userId, t);
         }
-        
+
+        if (isEmailChanged) {
+            sendVerificationEmail(user.email);
+        }
+
         await t.commit();
         return {
             message: "User account updated successfully",
@@ -668,13 +590,46 @@ async function updateAccountSettings(userId, body) {
             }
         };
     } catch (error) {
-        // Rollback transaction in case of an error
         if (t) await t.rollback();
         if (error instanceof ValidationError) {
             return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
         }
         console.error("Error during the transaction:", error);
         return { status: 500, data: { message: "Error updating user account", error: error.message }};
+    }
+}
+
+
+// Logout from all sessions globally
+async function logoutUserSessions(userId, transaction) {
+    console.log(`Logging out all sessions globally for user ${userId}...`);
+    try {
+        // Invalidate all session logs for the user
+        await SessionLog.update({
+            endTime: new Date()
+        }, {
+            where: {
+                userId: userId,
+                endTime: null
+            },
+            transaction
+        });
+        
+        // Invalidate all tokens for the user
+        await Token.update({
+            invalidated: true,
+            lastUsedAt: new Date()
+        }, {
+            where: {
+                userId: userId,
+                invalidated: false,
+                lastUsedAt: null
+            },
+            transaction
+        });
+    } catch (error) {
+        console.error("Failed to log out sessions globally", error);
+        throw error;  // Propagate this error up to catch it in the calling function
     }
 }
 

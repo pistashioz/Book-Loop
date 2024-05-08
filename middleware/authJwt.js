@@ -27,6 +27,121 @@ async function verifyTokenHelper(token) {
 
 // Middleware to verify token validity
 exports.verifyToken = async (req, res, next) => {
+    const accessToken = req.cookies['accessToken'];
+
+    if (!accessToken) {
+        return res.status(401).send({ message: "Access Token is missing or expired, please refresh token." });
+    }
+
+    try {
+        const decoded = await verifyTokenHelper(accessToken);
+        req.userId = decoded.id;
+        req.sessionId = decoded.session;
+        next();
+    } catch (err) {
+        return res.status(401).send({ message: "Invalid token. Please log in again." });
+    }
+};
+
+// Function to only issue an access token
+exports.issueAccessToken = (userId, sessionId) => {
+    try {
+        const expirationMins = config.jwtExpiration;
+        const expirationTime = dayjs().add(expirationMins, 'minute').unix(); // Expires in 30 minutes
+        const token = jwt.sign({ id: userId, session: sessionId }, config.secret, {
+            expiresIn: expirationTime
+        });
+        console.log("Access token signed");
+        return { token, expirationMins };
+    } catch (error) {
+        console.error("Error issuing access token:", error);
+        throw new Error("Failed to issue access token.");
+    }
+};
+
+// Asynchronously handle issuing a new refresh token and invalidating the old one
+exports.handleRefreshToken = async (userId, sessionId, invalidateOldToken = false) => {
+    try {
+        const expirationTime = dayjs().add(config.jwtRefreshExpiration, 'day').unix(); // Expires in 14 days
+        const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
+            expiresIn: expirationTime
+        });
+
+        // Start a database transaction
+        const t = await db.sequelize.transaction();
+
+        try {
+            // If requested, invalidate the old refresh token
+            if (!invalidateOldToken) {
+                await db.Token.update(
+                    { invalidated: true, lastUsedAt: new Date() },
+                    { where: { sessionId: sessionId, invalidated: false }, transaction: t }
+                );
+            }
+
+            // Save the new refresh token
+            await db.Token.create({
+                tokenKey: refreshToken,
+                userId: userId,
+                sessionId: sessionId,
+                tokenType: 'refresh',
+                expiresAt: new Date(dayjs().add(config.jwtRefreshExpiration, 'day').valueOf()),
+                invalidated: false
+            }, { transaction: t });
+
+            // Commit the transaction
+            await t.commit();
+
+            console.log("Refresh token issued and old token invalidated.");
+            return refreshToken;
+        } catch (error) {
+            // Rollback the transaction in case of error
+            await t.rollback();
+            throw error;
+        }
+    } catch (error) {
+        console.error("Error handling refresh token:", error);
+        throw new Error("Failed to handle refresh token.");
+    }
+};
+
+
+// Function to refresh tokens (to be called by a dedicated refresh endpoint)
+exports.refreshTokens = async (req, res) => {
+    const refreshToken = req.cookies['refreshToken'];
+    if (!refreshToken) {
+         // No refresh token provided, can't proceed with authentication
+         return res.status(403).send("Session invalid, please log in again.");
+    }
+
+    try {
+        const { id, session } = jwt.verify(refreshToken, config.secret);
+        const newAccessToken = exports.issueAccessToken(id, session);
+        const newRefreshToken = await exports.handleRefreshToken(id, session, true);
+
+        // Set new tokens in cookies
+        res.cookie('accessToken', newAccessToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Strict'
+        });
+
+        res.cookie('refreshToken', newRefreshToken, {
+            httpOnly: true,
+            secure: true,
+            path: '/refresh',
+            sameSite: 'Strict'
+        });
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error("Failed to refresh tokens:", error);
+        res.status(403).send({ message: "Failed to refresh tokens. Please log in again." });
+    }
+};
+
+/* // Middleware to verify token validity
+exports.verifyToken = async (req, res, next) => {
     const token = req.cookies['accessToken'];
     const isLogout = req.path.includes('/logout');  // Check if the request is for logout
     
@@ -80,9 +195,10 @@ exports.verifyToken = async (req, res, next) => {
             }
         }
     };
+ */
 
 
-    // Invalidate token and update session log
+/*     // Invalidate token and update session log
     async function invalidateTokenAndSession(sessionId, userId) {
         // Start a transaction
         const t = await db.sequelize.transaction();
@@ -113,51 +229,11 @@ exports.verifyToken = async (req, res, next) => {
             console.error("Error in invalidateTokenAndSession:", error);
             throw error; // Rethrow the error after rollback
         }
-    }
+    } */
     
 
-// Function to only issue an access token
-exports.issueAccessToken = (userId, sessionId) => {
-    try {
-        const expirationMins = config.jwtExpiration;
-        const expirationTime = dayjs().add(expirationMins, 'minute').unix(); // Expires in 30 minutes
-        const token = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-            expiresIn: expirationTime
-        });
-        console.log("Access token signed");
-        return { token, expirationMins };
-    } catch (error) {
-        console.error("Error issuing access token:", error);
-        throw new Error("Failed to issue access token.");
-    }
-};
 
-// Asynchronously handle refresh token
-exports.handleRefreshToken = async (userId, sessionId) => {
-    try {
-        const expirationTime = dayjs().add(config.jwtRefreshExpiration, 'day').unix(); // Expires in 14 days
-        const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-            expiresIn: expirationTime
-        });
-        console.log("Refresh token signed");
-
-        await Token.create({
-            tokenKey: refreshToken,
-            userId,
-            sessionId,
-            tokenType: 'refresh',
-            expiresAt: new Date(dayjs().add(config.jwtRefreshExpiration, 'day').valueOf()),
-            invalidated: false
-        });
-        console.log("Refresh token saved to database");
-    } catch (error) {
-        console.error("Error handling refresh token:", error);
-    }
-};
-
-
-
-// Function to refresh tokens
+/* // Function to refresh tokens
 exports.refreshTokens = async (userId, sessionId) => {
     console.log('Entered refresh tokens function');
     
@@ -182,4 +258,5 @@ exports.refreshTokens = async (userId, sessionId) => {
     });
 
     return { accessToken: newAccessToken };
-};
+}; */
+
