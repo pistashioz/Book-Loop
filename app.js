@@ -2,6 +2,8 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const cron = require('node-cron');
+
 require('dotenv').config(); // Load environment variables from .env file at the start
 
 // Initialize the express application
@@ -29,6 +31,8 @@ app.use((req, res, next) => {
   }
 });
 
+// Import and initialize the cron job for token cleanup
+require('./tokenCleanup'); // Ensure path accuracy
 
 // Define a basic route to check the server status
 app.get('/', (req, res) => {

@@ -19,6 +19,7 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.9.7",
+    "node-cron": "^3.0.3",
     "sequelize": "^6.37.3"
   },
   "devDependencies": {

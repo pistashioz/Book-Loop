@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const usersController = require('../controllers/users.controller');
-const { verifyToken, refreshTokens } = require('../middleware/authJwt');
+const { verifyToken } = require('../middleware/authJwt');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -21,7 +21,7 @@ router.route('/me/settings')
     
 router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 
-router.post('/me/refresh', refreshTokens);
+router.post('/me/refresh', usersController.refreshTokens);
 
 // General user routes
 router.route('/')

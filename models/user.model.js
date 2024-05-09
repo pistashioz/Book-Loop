@@ -44,9 +44,9 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             validate: {
                 notNull: { msg: 'Password cannot be null or empty!' },
-                len: { args: [8, 42], msg: 'Password should be between 8 and 42 characters' }
+                len: { args: [8, 60], msg: 'Password should be between 8 and 60 characters' } // Adjusted maximum length
             }
-        },
+        },        
         birthDate: {
             type: DataTypes.DATEONLY,
             allowNull: false,
@@ -97,23 +97,23 @@ module.exports = (sequelize, DataTypes) => {
         timestamps: false,
         freezeTableName: true,
         hooks: {
-            beforeCreate: hashPassword,
-            beforeUpdate: hashPasswordOnChange
-        },
+            // Hash password before user creation and updates
+            beforeCreate: async (user) => {
+              const salt = await bcrypt.genSaltSync(10);
+              user.password = await bcrypt.hashSync(user.password, salt);
+            },
+            beforeUpdate: async (user) => {
+                console.log(user.password);
+              if (user.changed('password')) {
+                console.log('password changed');
+                const salt = await bcrypt.genSaltSync(10);
+                user.password = await bcrypt.hashSync(user.password, salt);
+                console.log(user.password);
+              }
+            }
+          },
         indexes: [{ unique: true, fields: ['username'] }, { unique: true, fields: ['email'] }]
     });
-
-    function hashPassword(user) {
-        const salt = bcrypt.genSaltSync(10);
-        user.password = bcrypt.hashSync(user.password, salt);
-    }
-
-    function hashPasswordOnChange(user) {
-        if (user.changed('password')) {
-            const salt = bcrypt.genSaltSync(10);
-            user.password = bcrypt.hashSync(user.password, salt);
-        }
-    }
 
     function isOldEnough(value) {
         const today = new Date();

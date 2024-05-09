@@ -1,5 +1,7 @@
 // Import DB configuration and Sequelize operators
 const db = require('../models');
+const jwt = require('jsonwebtoken');
+const config = require('../config/auth.config');
 const dayjs = require('dayjs');
 const { Op, ValidationError } = require('sequelize');
 
@@ -127,103 +129,138 @@ exports.delete = async (req, res) => {
     }
 };
     
-    
-    
+// Helper function to create a token entry in the token table
+async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false) {
+    const t = await db.sequelize.transaction();
+    try {
+        if (invalidateOldToken) {
+            await Token.update({ invalidated: true, lastUsedAt: new Date() },
+                               { where: { sessionId: sessionId, invalidated: false }, transaction: t });
+        }
+        await Token.create({
+            tokenKey,
+            tokenType,
+            userId,
+            sessionId,
+            expiresAt: expires,
+            invalidated: false
+        }, { transaction: t });
+        await t.commit();
+    } catch (error) {
+        await t.rollback();
+        console.error("Failed to create token entry:", error);
+        throw error;
+    }
+}
+
+// Helper function to set cookies for refresh token and access token
+function setTokenCookies(res, accessToken, accessTokenExpiry, refreshToken, refreshTokenExpiry) {
+    res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== 'development',
+        expires: accessTokenExpiry,
+        sameSite: 'Strict'
+    });
+    res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== 'development',
+        expires: refreshTokenExpiry,
+        path: '/users/me/refresh',
+        sameSite: 'Strict'
+    });
+}
+
 // Login action for user
 exports.login = async (req, res) => {
     const { usernameOrEmail, password } = req.body;
-    
-    // Start a transaction
-    const t = await db.sequelize.transaction();
-    
     try {
-        // Attempt to find the user by username or email
+        const t = await db.sequelize.transaction();
+
         const user = await User.findOne({
-            where: {
-                [Op.or]: [
-                    { email: usernameOrEmail },
-                    { username: usernameOrEmail }
-                ]
-            }
-        }, { transaction: t });
-        
-        // If no user is found, return a 404 error
+            where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
+            transaction: t
+        });
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found" });
         }
-        
-        // Check if the provided password matches the one stored in the database
+
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
-            // If password does not match, return a 401 error for unauthorized access
             await t.rollback();
             return res.status(401).json({ message: "Invalid username or password" });
         }
-        
-        // Check for existing active sessions with the same device info
+
         const existingSession = await SessionLog.findOne({
-            where: {
-                userId: user.userId,
-                ipAddress: req.ip,  
-                deviceInfo: req.headers['user-agent'],
-                endTime: null  
-            }
-        }, { transaction: t });
-        
+            where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
+            transaction: t
+        });
         if (existingSession) {
-            // If an active session exists, deny the new login attempt
             await t.rollback();
-            return res.status(409).json({ message: "Active session already exists for this device and browser. Please log out from other sessions or continue using them." });
+            return res.status(409).json({ message: "Active session already exists for this device and browser." });
         }
-        
-        // Create a session log entry and capture its ID
+
         const sessionLog = await SessionLog.create({
             userId: user.userId,
             startTime: new Date(),
-            ipAddress: req.ip,  // Obtaining IP address from request
-            deviceInfo: req.headers['user-agent']  // Extracting device info from the user-agent header
+            ipAddress: req.ip,
+            deviceInfo: req.headers['user-agent']
         }, { transaction: t });
-        
-        // Generate JWTs using the newly created session log ID
-        const accessToken = issueAccessToken(user.userId, sessionLog.sessionId);  // Immediate access token issuance
-        handleRefreshToken(user.userId, sessionLog.sessionId);  // Handle refresh token asynchronously
-        
-        // Set cookie with HttpOnly and Secure flags
-        res.cookie('accessToken', accessToken.token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV !== 'development',
-            expires: new Date(dayjs().add(accessToken.expirationMins, 'ms').valueOf()), // Converts to appropriate date format
-            sameSite: 'strict'
-        });
-        
-/*         console.log(`refreshToken: ${refreshToken.token} and expires in ${refreshToken.expirationTime} seconds`);
-        res.cookie('refreshToken', refreshToken.token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV!== 'development',
-            expires: new Date(dayjs().add(refreshToken.expirationTime, 'seconds').valueOf()), // Converts to appropriate date format
-            sameSite: 'strict',
-            path: '/refresh'
-        }); */
-        
-        // If login is successful, commit the transaction and return user info or a token
+
+        const { token: accessToken, expires: accessTokenExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
+        const { refreshToken, expires: refreshTokenExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
+
+        createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
+
+        setTokenCookies(res, accessToken, accessTokenExpires, refreshToken, refreshTokenExpires);
+
         await t.commit();
         res.status(200).json({
             message: "Login successful",
-            user: {
-                id: user.userId,
-                username: user.username,
-                email: user.email
-            }
+            user: { id: user.userId, username: user.username, email: user.email }
         });
     } catch (error) {
-        // Rollback transaction in case of any error
-        await t.rollback();
-        // Handle any unexpected errors during the process
+        console.error("Error during login:", error);
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
 };
-    
+
+// Function to refresh tokens (to be called by a dedicated refresh endpoint)
+exports.refreshTokens = async (req, res) => {
+    const refreshToken = req.cookies['refreshToken'];
+
+    if (!refreshToken) {
+        return res.status(403).send("Session invalid, please log in again.");
+    }
+
+    try {
+        const existingToken = await Token.findOne({
+            where: { tokenKey: refreshToken, tokenType: 'refresh' }
+        });
+        if (!existingToken || existingToken.expiresAt < new Date() || existingToken.invalidated) {
+            if (existingToken) {
+                await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken } });
+            }
+            return res.status(403).send("Token expired or invalidated, please log in again.");
+        }
+
+        const { id, session } = jwt.verify(refreshToken, config.secret);
+
+        const { token: newAccessToken, expires: accessTokenExpires } = issueAccessToken(id, session);
+        const { refreshToken: newRefreshToken, expires: refreshTokenExpires } = handleRefreshToken(id, session);
+
+        createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
+
+        setTokenCookies(res, newAccessToken, accessTokenExpires, newRefreshToken, refreshTokenExpires);
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error("Failed to refresh tokens:", error);
+        res.status(403).send({ message: "Failed to refresh tokens. Please log in again." });
+    }
+};
+
+
 // Log out action for user
 exports.logout = async (req, res) => {
     const sessionId = req.sessionId; // The current session ID obtained from the authenticated user's request
@@ -288,7 +325,6 @@ exports.validateSession = (req, res) => {
     });
 };
 
-    
 // Update or create a user address and corresponding postal code
 exports.updateUserAddress = async (req, res) => {
     const userId = req.userId;  // from middleware
@@ -426,12 +462,7 @@ async function fetchProfileSettings(userId) {
     };
 }
     
-/**
-* Fetches the account settings of a user.
-* 
-* @param {number} userId - The ID of the user.
-* @returns {object} The account settings of the user.
-*/
+// Fetches the account settings of a user.
 async function fetchAccountSettings(userId) {
     const user = await db.User.findByPk(userId, {
         include: [
@@ -458,8 +489,71 @@ async function fetchAccountSettings(userId) {
         })) : []
     };
 }
-    
-    
+
+// Helper function to fetch notification settings for a user
+async function fetchNotificationsSettings(userId) {
+    try {
+        const defaults = await db.Configuration.findAll({
+            where: { configType: 'notifications' },
+            attributes: ['configKey', 'description']
+        });
+
+        const userSettings = await db.UserConfiguration.findAll({
+            where: { userId: userId },
+            include: [{
+                model: db.Configuration,
+                where: { configType: 'notifications' },
+                attributes: ['configKey']
+            }],
+            attributes: ['configValue']
+        });
+      
+        // Map to reduce lookup time for user settings
+        const userSettingsMap = userSettings.reduce((acc, setting) => {
+            acc[setting.Configuration.configKey] = setting.configValue;
+            return acc;
+        }, {});
+
+        // Build a structured response
+        const response = {
+            main: {},
+            news: {},
+            highPriority: {},
+            other: {}
+        };
+
+        // Example categorization (you can adjust these based on actual application logic)
+        const categoryMap = {
+            enable_email_notifications: 'main',
+            platform_updates: 'news',
+            marketing_communications: 'news',
+            new_messages: 'highPriority',
+            new_reviews: 'highPriority',
+            price_changes: 'other',
+            bookmarked_books: 'other',
+            new_followers: 'other',
+            new_listings: 'news'
+        };
+
+        defaults.forEach(setting => {
+            const category = categoryMap[setting.configKey];
+            response[category][setting.configKey] = {
+                description: setting.description,
+                value: userSettingsMap[setting.configKey] || false // Assume default is false if not set
+            };
+        });
+
+        return response;
+    } catch (error) {
+        console.error("Error fetching notification settings", error);
+        throw new Error("Failed to retrieve notification settings");
+    }
+}
+
+
+/////
+
+
 // Update user settings based on type
 exports.updateUserSettings = async (req, res) => {
     const userId = req.userId;  // Extracted from verifyToken middleware
@@ -468,24 +562,30 @@ exports.updateUserSettings = async (req, res) => {
     try {
         switch (type) {
             case 'profile':
-            const profileUpdateData = await updateProfileSettings(userId, req.body);
-            res.status(200).json(profileUpdateData);
-            break;
+                const profileUpdateData = await updateProfileSettings(userId, req.body);
+                res.status(200).json(profileUpdateData);
+                break;
             case 'account':
-            const accountUpdateData = await updateAccountSettings(userId, req.body);
-            res.status(200).json(accountUpdateData);
-            break;
-            // Add other cases as necessary
+                const accountUpdateData = await updateAccountSettings(userId, req.body, res);
+                res.status(200).json(accountUpdateData);
+                break;
+            case 'notifications':
+                const notificationsUpdateData = await updateNotificationSettings(userId, req.body);
+                res.status(200).json(notificationsUpdateData);
+                break;
+            case 'privacy':
+                const privacyUpdateData = await updatePrivacySettings(userId, req.body);
+                res.status(200).json(privacyUpdateData);
+                break;
             default:
-            res.status(400).json({ message: "Invalid settings type specified" });
-            break;
+                res.status(400).json({ message: "Invalid settings type specified" });
+                break;
         }
     } catch (error) {
         console.error('Error updating user settings', error);
         res.status(500).json({ message: "Error updating settings", error: error.message });
     }
 };
-   
 
 async function updateProfileSettings(userId, body) {
     const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
@@ -527,34 +627,41 @@ async function updateProfileSettings(userId, body) {
     }
 }
 
-    
 // Update user account settings
-async function updateAccountSettings(userId, body) {
+async function updateAccountSettings(userId, body, res) {
     const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
-    let t;
+
+    // Validate presence of password fields
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        return { status: 400, data: { message: "All password fields must be provided." } };
+    }
+
+    let transaction;
 
     try {
-        t = await db.sequelize.transaction();
+        transaction = await db.sequelize.transaction();
 
-        const user = await db.User.findByPk(userId, { transaction: t });
+        const user = await db.User.findByPk(userId, { transaction });
         if (!user) {
-            await t.rollback();
+            await transaction.rollback();
             return { status: 404, data: { message: "User not found." } };
         }
-        console.log(`currentPassword: ${currentPassword}, newPassword: ${newPassword}, confirmPassword: ${confirmPassword}`);
-        // Verify current password before allowing update
-        if ((currentPassword) && newPassword && confirmPassword) {
-            if (!await user.validPassword(currentPassword)) {
-                await t.rollback();
-                return { status: 401, data: { message: "Invalid current password." } };
-            }
-            if (newPassword !== confirmPassword) {
-                await t.rollback();
-                return { status: 400, data: { message: "New passwords do not match." } };
-            }
 
-            user.password = newPassword;  // Triggers password hash hook
+        // Validate current password
+        if (!(await user.validPassword(currentPassword))) {
+            await transaction.rollback();
+            return { status: 401, data: { message: "Invalid current password." } };
         }
+        
+        // Validate new password confirmation
+        if (newPassword !== confirmPassword) {
+            await transaction.rollback();
+            return { status: 400, data: { message: "New passwords do not match." } };
+        }
+
+        // Update the user's password and mark as changed
+        user.password = newPassword;
+        user.changed('password', true);
 
         let isEmailChanged = email && email !== user.email;
         const updateData = {
@@ -563,21 +670,24 @@ async function updateAccountSettings(userId, body) {
             name: name || user.name,
             birthDate: birthdayDate || user.birthDate,
             holidayMode: holidayMode !== undefined ? holidayMode : user.holidayMode,
-            isVerified: isEmailChanged ? false : user.isVerified
+            isVerified: !isEmailChanged ? user.isVerified : false
         };
 
-        await user.update(updateData, { transaction: t });
+        // Save changes
+        await user.save({ transaction });
 
         if (newPassword) {
-            // Trigger global logout when password changes
-            await logoutUserSessions(userId, t);
+            // Invalidate all sessions due to password change
+            await logoutUserSessions(userId, transaction);
+            res.clearCookie('accessToken');
+            res.clearCookie('refreshToken');
         }
 
         if (isEmailChanged) {
             sendVerificationEmail(user.email);
         }
 
-        await t.commit();
+        await transaction.commit();
         return {
             message: "User account updated successfully",
             user: {
@@ -590,15 +700,11 @@ async function updateAccountSettings(userId, body) {
             }
         };
     } catch (error) {
-        if (t) await t.rollback();
-        if (error instanceof ValidationError) {
-            return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
-        }
+        if (transaction) await transaction.rollback();
         console.error("Error during the transaction:", error);
-        return { status: 500, data: { message: "Error updating user account", error: error.message }};
+        return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
-
 
 // Logout from all sessions globally
 async function logoutUserSessions(userId, transaction) {
@@ -632,7 +738,6 @@ async function logoutUserSessions(userId, transaction) {
         throw error;  // Propagate this error up to catch it in the calling function
     }
 }
-
 
 function sendVerificationEmail(email) {
     console.log(`Sending verification email to ${email}`);
