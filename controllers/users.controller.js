@@ -7,20 +7,60 @@ const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
-const { raw } = require('mysql2');
+
 
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
+    // Extract parameters and ensure they are integers
+    const { username = "" } = req.query;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+
     try {
-        const users = await User.findAll();
-        res.status(200).json(users);
+        const { count, rows } = await db.User.findAndCountAll({
+            where: {
+                username: {
+                    [Op.like]: `%${username}%`
+                }
+            },
+            attributes: [
+                'profileImage',
+                'username',
+                [db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 'averageRating'],
+                [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
+            ],
+            include: [{
+                model: db.PurchaseReview,
+                as: 'SellerReviews',  
+                attributes: [],
+                duplicating: false
+            }],            
+            group: ['User.userId'],
+            order: [
+                ['username', 'ASC']
+            ],
+            limit,
+            offset
+        });
+
+        const totalPages = Math.ceil(count / limit);
+
+        res.status(200).json({
+            data: rows,
+            currentPage: page,
+            totalPages,
+            totalUsers: count
+        });
     } catch (error) {
+        console.error("Error retrieving users:", error);
         res.status(500).json({ message: "Error retrieving users", error: error.message });
     }
 };
+
 
 // Retrieve a single user by ID
 exports.findOne = async (req, res) => {
@@ -1005,33 +1045,30 @@ async function updatePrivacySettings(userId, settings) {
 
 // Follow another user
 exports.followUser = async (req, res) => {
-    const { targetUserId } = req.body; // The user ID to follow
-    const userId = req.userId; // The ID of the user making the request
+    const { targetUserId } = req.body;
+    const userId = req.userId;
+
+    if (userId == targetUserId) {
+        return res.status(400).json({ message: "Cannot follow yourself." });
+    }
 
     try {
-        await db.FollowRelationship.create({
-            mainUserId: userId,
-            followedUserId: targetUserId
+        const userExists = await db.User.findByPk(targetUserId);
+        if (!userExists) {
+            return res.status(404).json({ message: "User not found!" });
+        }
+
+        const [followRelationship, created] = await db.FollowRelationship.findOrCreate({
+            where: { mainUserId: userId, followedUserId: targetUserId }
         });
+
+        if (!created) {
+            return res.status(400).json({ message: "Already following this user." });
+        }
+
         res.status(200).json({ message: 'User followed successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error following user', error: error.message });
-    }
-};
-
-// Block another user
-exports.blockUser = async (req, res) => {
-    const { targetUserId } = req.body; // The user ID to block
-    const userId = req.userId; // The ID of the user making the request
-
-    try {
-        await db.Block.create({
-            blockerUserId: userId,
-            blockedUserId: targetUserId
-        });
-        res.status(200).json({ message: 'User blocked successfully.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error blocking user', error: error.message });
     }
 };
 
@@ -1040,13 +1077,49 @@ exports.unfollowUser = async (req, res) => {
     const { followedUserId } = req.params;
     const userId = req.userId;
 
+    const relationship = await db.FollowRelationship.findOne({
+        where: { mainUserId: userId, followedUserId }
+    });
+
+    if (!relationship) {
+        return res.status(400).json({ message: "Not currently following this user." });
+    }
+
     try {
-        await db.FollowRelationship.destroy({
-            where: { mainUserId: userId, followedUserId }
-        });
+        await relationship.destroy();
         res.status(200).json({ message: 'Unfollowed successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error unfollowing user', error: error.message });
+    }
+};
+
+// Block another user
+exports.blockUser = async (req, res) => {
+    const targetUserId = req.body.targetUserId; 
+    const userId = req.userId; 
+
+
+    if (userId == targetUserId) {
+        return res.status(400).json({ message: "Cannot block yourself." });
+    }
+
+    try {
+        const userExists = await User.findByPk(targetUserId);
+        if (!userExists) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        const [block, created] = await Block.findOrCreate({
+            where: { blockerUserId: userId, blockedUserId: targetUserId }
+        });
+
+        if (!created) {
+            return res.status(400).json({ message: "User already blocked." });
+        }
+
+        res.status(200).json({ message: 'User blocked successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error blocking user', error: error.message });
     }
 };
 
@@ -1055,10 +1128,16 @@ exports.unblockUser = async (req, res) => {
     const { blockedUserId } = req.params;
     const userId = req.userId;
 
+    const block = await db.Block.findOne({
+        where: { blockerUserId: userId, blockedUserId }
+    });
+
+    if (!block) {
+        return res.status(400).json({ message: "User not currently blocked." });
+    }
+
     try {
-        await db.Block.destroy({
-            where: { blockerUserId: userId, blockedUserId }
-        });
+        await block.destroy();
         res.status(200).json({ message: 'User unblocked successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error unblocking user', error: error.message });

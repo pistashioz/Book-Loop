@@ -1,20 +1,22 @@
 module.exports = (sequelize, DataTypes) => {
-    const Block = sequelize.define('Block', {
-        blockerUserId: {
+    const FollowRelationship = sequelize.define('FollowRelationship', {
+        mainUserId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            references: { model: 'user', key: 'userId' }
+            references: { model: 'user', key: 'userId' },
+            primaryKey: true // Part of the primary key
         },
-        blockedUserId: {
+        followedUserId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            references: { model: 'user', key: 'userId' }
+            references: { model: 'user', key: 'userId' },
+            primaryKey: true // Part of the primary key
         }
     }, {
-        tableName: 'block',
-        timestamps: false, // No automatic timestamps
-        freezeTableName: true // Ensures table name is not pluralized
+        tableName: 'followRelationship',
+        timestamps: false,
+        freezeTableName: true
     });
 
-    return Block;
+    return FollowRelationship;
 };

@@ -18,7 +18,7 @@ sequelize.authenticate()
 /*       .then(() => {
         console.log('Connection has been established successfully.');
         return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    })    */
+    })   */  
     .then(() => {
         console.log('Database models were synchronized successfully.');
     })
@@ -40,6 +40,7 @@ db.PostalCode = require('./postalCode.model.js')(sequelize, DataTypes);
 db.UserSocialMedia = require('./userSocialMedia.model.js')(sequelize, DataTypes);
 db.FollowRelationship = require('./followRelationship.model.js')(sequelize, DataTypes);
 db.Block = require('./block.model.js')(sequelize, DataTypes);
+db.PurchaseReview = require('./purchaseReview.model.js')(sequelize, DataTypes);
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -73,5 +74,10 @@ db.Block.belongsTo(db.User, { as: 'Blocker', foreignKey: 'blockerUserId' });
 db.User.hasMany(db.Block, { as: 'BlockedUsers', foreignKey: 'blockedUserId' });
 db.Block.belongsTo(db.User, { as: 'BlockedUser', foreignKey: 'blockedUserId' });
 
+db.User.hasMany(db.PurchaseReview, { as: 'BuyerReviews', foreignKey: 'buyerUserId', onDelete: 'CASCADE' });
+db.PurchaseReview.belongsTo(db.User, { as: 'Buyer', foreignKey: 'buyerUserId' });
+
+db.User.hasMany(db.PurchaseReview, { as: 'SellerReviews', foreignKey: 'sellerUserId', onDelete: 'CASCADE' });
+db.PurchaseReview.belongsTo(db.User, { as: 'Seller', foreignKey: 'sellerUserId' });
 
 module.exports = db;

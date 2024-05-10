@@ -49,5 +49,5 @@ async function cleanupExpiredTokens() {
 // Schedule the token cleanup job to run every hour
  // cron.schedule('0 * * * *', cleanupExpiredTokens);
 
- cron.schedule('* * * * *', cleanupExpiredTokens); // Schedule the token cleanup job to run every minute
+ // cron.schedule('* * * * *', cleanupExpiredTokens); // Schedule the token cleanup job to run every minute
 // cron.schedule('*/10 * * * * *', cleanupExpiredTokens);

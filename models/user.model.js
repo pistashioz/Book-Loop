@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 // Helper Functions
 const validateAddressComplete = function(value, next) {
     if ((value !== undefined || this.street !== undefined || this.streetNumber !== undefined || this.postalCode !== undefined) && 
-        !(this.street && this.streetNumber && this.postalCode)) {
+    !(this.street && this.streetNumber && this.postalCode)) {
         throw new Error('All address fields must be provided together.');
     }
     next();
@@ -99,43 +99,40 @@ module.exports = (sequelize, DataTypes) => {
         hooks: {
             // Hash password before user creation and updates
             beforeCreate: async (user) => {
-              const salt = await bcrypt.genSaltSync(10);
-              user.password = await bcrypt.hashSync(user.password, salt);
+                const salt = await bcrypt.genSaltSync(10);
+                user.password = await bcrypt.hashSync(user.password, salt);
             },
             beforeUpdate: async (user) => {
                 console.log(user.password);
-              if (user.changed('password')) {
-                console.log('password changed');
-                const salt = await bcrypt.genSaltSync(10);
-                user.password = await bcrypt.hashSync(user.password, salt);
-                console.log(user.password);
-              }
+                if (user.changed('password')) {
+                    console.log('password changed');
+                    const salt = await bcrypt.genSaltSync(10);
+                    user.password = await bcrypt.hashSync(user.password, salt);
+                    console.log(user.password);
+                }
             }
-          },
+        },
         indexes: [{ unique: true, fields: ['username'] }, { unique: true, fields: ['email'] }]
     });
-
+    
     function isOldEnough(value) {
         const today = new Date();
         const birthDate = new Date(value);
         const age = today.getFullYear() - birthDate.getFullYear();
-      
-        // Check if birthday has already passed in the current year
-        if (today.getMonth() < birthDate.getMonth() || 
-            (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) {
-          return; // User is younger than 16 by a full year, so no need for further checks
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
         }
-      
         if (age < 16) {
-          throw new Error('User must be at least 16 years of age to register.');
+            throw new Error('User must be at least 16 years of age to register.');
         }
-      }
-      
-
+    }
+    
+    
     // Validate the password for authentication
     User.prototype.validPassword = async function(password) {
         return await bcrypt.compare(password, this.password);
     };
-
+    
     return User;
 };
