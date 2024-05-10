@@ -38,13 +38,14 @@ db.Token = require('./token.model.js')(sequelize, DataTypes);
 // db.Address = require('./address.model.js')(sequelize, DataTypes);
 db.PostalCode = require('./postalCode.model.js')(sequelize, DataTypes);
 db.UserSocialMedia = require('./userSocialMedia.model.js')(sequelize, DataTypes);
-
+db.FollowRelationship = require('./followRelationship.model.js')(sequelize, DataTypes);
+db.Block = require('./block.model.js')(sequelize, DataTypes);
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
 db.UserConfiguration.belongsTo(db.User, { foreignKey: 'userId' });
 
-db.Configuration.hasMany(db.UserConfiguration, { foreignKey: 'configId', onDelete: 'CASCADE' });
+db.Configuration.hasMany(db.UserConfiguration, { foreignKey: 'configId', onDelete: 'CASCADE', as: 'userConfiguration' });
 db.UserConfiguration.belongsTo(db.Configuration, { foreignKey: 'configId' });
 
 db.User.hasMany(db.SessionLog, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -61,5 +62,16 @@ db.PostalCode.hasMany(db.User, { foreignKey: 'postalCode', as: 'users', onDelete
 
 db.User.hasMany(db.UserSocialMedia, { foreignKey: 'userId', as: 'userSocialMedias', onDelete: 'CASCADE' });
 db.UserSocialMedia.belongsTo(db.User, { foreignKey: 'userId' });
+
+db.User.hasMany(db.FollowRelationship, { as: 'Followings', foreignKey: 'mainUserId' });
+db.FollowRelationship.belongsTo(db.User, { as: 'MainUser', foreignKey:'mainUserId' });
+db.User.hasMany(db.FollowRelationship, { as: 'Followers', foreignKey: 'followedUserId' });
+db.FollowRelationship.belongsTo(db.User, { as: 'FollowedUser', foreignKey: 'followedUserId' });
+
+db.User.hasMany(db.Block, { as: 'Blockers', foreignKey: 'blockerUserId' });
+db.Block.belongsTo(db.User, { as: 'Blocker', foreignKey: 'blockerUserId' });
+db.User.hasMany(db.Block, { as: 'BlockedUsers', foreignKey: 'blockedUserId' });
+db.Block.belongsTo(db.User, { as: 'BlockedUser', foreignKey: 'blockedUserId' });
+
 
 module.exports = db;

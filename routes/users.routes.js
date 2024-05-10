@@ -23,6 +23,24 @@ router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 
 router.post('/me/refresh', usersController.refreshTokens);
 
+// Routes for handling account deactivation and deletion requests
+router.post('/me/deactivate', verifyToken, usersController.deactivateAccount);
+router.post('/me/delete', verifyToken, usersController.initiateAccountDeletion);
+
+// Following a user
+router.post('/me/follow', verifyToken, usersController.followUser);
+
+// Blocking a user
+router.post('/me/block', verifyToken, usersController.blockUser);
+
+/* // Getting list of followers and followings
+router.get('/:userId/following', usersController.getFollowing);
+router.get('/:userId/followers', usersController.getFollowers); */
+
+// Unfollowing and unblocking
+router.delete('/me/following/:followedUserId', verifyToken, usersController.unfollowUser);
+router.delete('/me/blocked/:blockedUserId', verifyToken, usersController.unblockUser);
+
 // General user routes
 router.route('/')
     .get(usersController.findAll)

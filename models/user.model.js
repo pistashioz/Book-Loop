@@ -119,13 +119,18 @@ module.exports = (sequelize, DataTypes) => {
         const today = new Date();
         const birthDate = new Date(value);
         const age = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-            throw new Error('User must be at least 16 years of age to register.');
-        } else if (age < 16) {
-            throw new Error('User must be at least 16 years of age to register.');
+      
+        // Check if birthday has already passed in the current year
+        if (today.getMonth() < birthDate.getMonth() || 
+            (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) {
+          return; // User is younger than 16 by a full year, so no need for further checks
         }
-    }
+      
+        if (age < 16) {
+          throw new Error('User must be at least 16 years of age to register.');
+        }
+      }
+      
 
     // Validate the password for authentication
     User.prototype.validPassword = async function(password) {

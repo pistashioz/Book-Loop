@@ -9,6 +9,7 @@ const { Op, ValidationError } = require('sequelize');
 // Access models through the centralized db object
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
+const { raw } = require('mysql2');
 
 
 // Retrieve all users
@@ -47,7 +48,7 @@ if (!username || !email || !password || !birthDate || !acceptTAndC) {
 }
 
 // Start a transaction - either all goes well, or none at all
-const t = await sequelize.transaction();
+const t = await db.sequelize.transaction();
 
 try {
     // Create a new user
@@ -172,10 +173,10 @@ function setTokenCookies(res, accessToken, accessTokenExpiry, refreshToken, refr
 
 // Login action for user
 exports.login = async (req, res) => {
-    const { usernameOrEmail, password } = req.body;
+    const { usernameOrEmail, password, reactivate } = req.body;
     try {
         const t = await db.sequelize.transaction();
-
+        
         const user = await User.findOne({
             where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
             transaction: t
@@ -184,13 +185,23 @@ exports.login = async (req, res) => {
             await t.rollback();
             return res.status(404).json({ message: "User not found" });
         }
-
+        
+        // Check if the account is deactivated or scheduled for deletion beyond grace period
+        if (!reactivate && (user.isActiveStatus === 'suspended' || 
+        (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
+            return res.status(403).json({
+                message: "Account is deactivated or past the scheduled deletion date. Reactivation is not possible.",
+                actionRequired: false
+            });
+        }
+        
+        
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
             await t.rollback();
             return res.status(401).json({ message: "Invalid username or password" });
         }
-
+        
         const existingSession = await SessionLog.findOne({
             where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
             transaction: t
@@ -199,21 +210,34 @@ exports.login = async (req, res) => {
             await t.rollback();
             return res.status(409).json({ message: "Active session already exists for this device and browser." });
         }
-
+        
         const sessionLog = await SessionLog.create({
             userId: user.userId,
             startTime: new Date(),
             ipAddress: req.ip,
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
-
+        
         const { token: accessToken, expires: accessTokenExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
-
+        
         createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
-
+        
         setTokenCookies(res, accessToken, accessTokenExpires, refreshToken, refreshTokenExpires);
-
+        
+        
+        // Reactivate the account if requested
+        if (reactivate) {
+            await User.update({
+                isActiveStatus: 'active',
+                deletionScheduleDate: null
+            }, {
+                where: { userId: user.userId },
+                transaction: t
+            });
+        }
+        
+        // Commit transaction and return success
         await t.commit();
         res.status(200).json({
             message: "Login successful",
@@ -312,6 +336,92 @@ exports.logout = async (req, res) => {
         res.status(500).json({ message: "Error during logout", error: error.message });
     }
 };
+
+// Controller to handle account deactivation
+exports.deactivateAccount = async (req, res) => {
+    const id = req.userId;  // Extracted from verifyToken middleware
+    try {
+/*         // Check for active listings or ongoing conversations - still need to implement these models
+        const activeListings = await db.Listing.count({
+            where: { sellerUserId: id, availability: 'Active' }
+        });
+        const activeConversations = await db.ConversationParticipant.count({
+            where: { userId: id },
+            include: [{
+                model: db.Conversation,
+                where: { conversationType: 'transaction' } // The conversations type that we want to check
+            }]
+        });
+
+        if (activeListings > 0 || activeConversations > 0) {
+            return res.status(403).json({ message: "Cannot deactivate account with active listings or ongoing conversations." });
+        } */
+
+        // Proceed to deactivate
+        const result = await db.User.update({
+            isActiveStatus: 'suspended'
+        }, {
+            where: { userId: id }
+        });
+
+        if (result == 0) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        // Logout from all sessions
+        await logoutUserSessions(id, null); 
+        res.status(200).json({ message: "Account has been deactivated." });
+    } catch (error) {
+        console.error("Error deactivating account:", error);
+        res.status(500).json({ message: "Error deactivating account", error: error.message });
+    }
+};
+
+// Controller to handle account deletion request
+exports.initiateAccountDeletion = async (req, res) => {
+    const id = req.userId;
+    const deletionDate = new Date();
+    deletionDate.setDate(deletionDate.getDate() + 30); // Set 30 days from now
+
+    try {
+/*         // Similar check as in deactivation
+        const activeListings = await db.Listing.count({
+            where: { sellerUserId: id, availability: 'Active' }
+        });
+        const activeConversations = await db.ConversationParticipant.count({
+            where: { userId: id },
+            include: [{
+                model: db.Conversation,
+                where: { conversationType: 'transaction' }
+            }]
+        });
+
+        if (activeListings > 0 || activeConversations > 0) {
+            return res.status(403).json({ message: "Cannot delete account with active listings or ongoing conversations." });
+        } */
+
+        const result = await db.User.update({
+            isActiveStatus: 'to be deleted',
+            deletionScheduleDate: deletionDate
+        }, {
+            where: { userId: id }
+        });
+
+        if (result == 0) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        // Logout from all sessions
+        await logoutUserSessions(id, null);
+
+        res.status(200).json({ message: "Account deletion initiated. Account will be deleted after 30 days unless cancelled." });
+    } catch (error) {
+        console.error("Error initiating account deletion:", error);
+        res.status(500).json({ message: "Error initiating account deletion", error: error.message });
+    }
+};
+
+
     
 // Session validation to verify active user sessions
 exports.validateSession = (req, res) => {
@@ -493,28 +603,31 @@ async function fetchAccountSettings(userId) {
 // Helper function to fetch notification settings for a user
 async function fetchNotificationsSettings(userId) {
     try {
-        const defaults = await db.Configuration.findAll({
+        // Fetch configurations related to 'notifications' from the Configuration table
+        // including the user-specific settings from the UserConfiguration table if they exist.
+        const configs = await db.Configuration.findAll({
             where: { configType: 'notifications' },
-            attributes: ['configKey', 'description']
-        });
-
-        const userSettings = await db.UserConfiguration.findAll({
-            where: { userId: userId },
             include: [{
-                model: db.Configuration,
-                where: { configType: 'notifications' },
-                attributes: ['configKey']
+                model: db.UserConfiguration,
+                where: { userId: userId },
+                attributes: ['configValue'],
+                as: 'userConfiguration',
+                required: false  // Ensures all notifications configs are returned even if no user-specific setting exists
             }],
-            attributes: ['configValue']
+            attributes: ['configKey', 'description'],
+            raw: true,
+            nest: true,
+            order: [['configKey', 'ASC']]  // Sorts the configurations by key for consistent ordering
         });
-      
-        // Map to reduce lookup time for user settings
-        const userSettingsMap = userSettings.reduce((acc, setting) => {
-            acc[setting.Configuration.configKey] = setting.configValue;
-            return acc;
-        }, {});
 
-        // Build a structured response
+        // Transform the raw config data into a more manageable format
+        const transformedConfigs = configs.map(config => ({
+            configKey: config.configKey,
+            description: config.description,
+            configValue: config.userConfiguration ? config.userConfiguration.configValue : 'false'  // Defaults to 'false' if not specifically set by the user
+        }));
+
+        // Define response structure with categorized settings
         const response = {
             main: {},
             news: {},
@@ -522,7 +635,7 @@ async function fetchNotificationsSettings(userId) {
             other: {}
         };
 
-        // Example categorization (you can adjust these based on actual application logic)
+        // Map to categorize each config setting based on its key
         const categoryMap = {
             enable_email_notifications: 'main',
             platform_updates: 'news',
@@ -535,11 +648,12 @@ async function fetchNotificationsSettings(userId) {
             new_listings: 'news'
         };
 
-        defaults.forEach(setting => {
-            const category = categoryMap[setting.configKey];
-            response[category][setting.configKey] = {
-                description: setting.description,
-                value: userSettingsMap[setting.configKey] || false // Assume default is false if not set
+        // Populate the response object based on predefined categories
+        transformedConfigs.forEach(config => {
+            const category = categoryMap[config.configKey];
+            response[category][config.configKey] = {
+                description: config.description,
+                value: config.configValue  // Use the transformed value
             };
         });
 
@@ -549,6 +663,65 @@ async function fetchNotificationsSettings(userId) {
         throw new Error("Failed to retrieve notification settings");
     }
 }
+
+// Helper function to fetch privacy settings for a user
+async function fetchPrivacySettings(userId) {
+    try {
+        // Fetch privacy configurations from the Configuration table
+        // including the user-specific settings from the UserConfiguration table if they exist.
+        const configs = await db.Configuration.findAll({
+            where: { configType: 'privacy' },
+            include: [{
+                model: db.UserConfiguration,
+                where: { userId: userId },
+                attributes: ['configValue'],
+                as: 'userConfiguration',
+                required: false  // Ensures all privacy configs are returned even if no user-specific setting exists
+            }],
+            attributes: ['configKey', 'description'],
+            raw: true,
+            nest: true,
+            order: [['configKey', 'ASC']]  // Optional: sorts the configurations by key for consistent ordering
+        });
+
+        // Transform the raw config data into a structured format for ease of use
+        const transformedConfigs = configs.map(config => ({
+            configKey: config.configKey,
+            description: config.description,
+            configValue: config.userConfiguration ? config.userConfiguration.configValue : 'false'  // Defaults to 'false' if not specifically set by the user
+        }));
+
+        // Define response structure for categorized settings, if necessary
+        const response = {
+            dataTracking: {},
+            personalization: {},
+            marketing: {}
+        };
+
+        // Map to categorize each config setting based on its key
+        const categoryMap = {
+            allow_data_tracking: 'dataTracking',
+            personalise_experience: 'personalization',
+            feature_books_in_marketing: 'marketing',
+            notify_owners_on_bookmark: 'marketing'
+        };
+
+        // Populate the response object based on predefined categories
+        transformedConfigs.forEach(config => {
+            const category = categoryMap[config.configKey];
+            response[category][config.configKey] = {
+                description: config.description,
+                value: config.configValue  // Use the transformed value
+            };
+        });
+
+        return response;
+    } catch (error) {
+        console.error("Error fetching privacy settings", error);
+        throw new Error("Failed to retrieve privacy settings");
+    }
+}
+
 
 
 /////
@@ -743,3 +916,151 @@ function sendVerificationEmail(email) {
     console.log(`Sending verification email to ${email}`);
     // email sending logic here
 }
+
+// Helper function to update notification settings for a user
+async function updateNotificationSettings(userId, settings) {
+    let transaction;
+    try {
+        transaction = await db.sequelize.transaction();
+
+        // Iterate over the settings provided in the request body
+        for (const [configKey, configValue] of Object.entries(settings)) {
+            // First, fetch the corresponding configuration ID
+            const config = await Configuration.findOne({
+                where: {
+                    configKey: configKey,
+                    configType: 'notifications'
+                }
+            });
+
+            // Throw an error if the configuration key is invalid (does not exist in the database)
+            if (!config) {
+                throw new Error(`Invalid config key: ${configKey}`);
+            }
+
+            // Update the user's configuration value
+            await UserConfiguration.update({
+                configValue: configValue
+            }, {
+                where: {
+                    userId: userId,
+                    configId: config.configId
+                },
+                transaction: transaction
+            });
+        }
+
+        await transaction.commit();
+        return { message: "Notification settings updated successfully" };
+    } catch (error) {
+        // Rollback the transaction in case of an error
+        if (transaction) await transaction.rollback();
+        console.error("Error updating notification settings", error);
+        throw new Error("Failed to update notification settings");
+    }
+}
+
+// Helper function to update privacy settings for a user
+async function updatePrivacySettings(userId, settings) {
+    let transaction;
+    try {
+        transaction = await db.sequelize.transaction();
+
+        // Iterate over the settings provided in the request body
+        for (const [configKey, configValue] of Object.entries(settings)) {
+            // First, fetch the corresponding configuration ID
+            const config = await db.Configuration.findOne({
+                where: {
+                    configKey: configKey,
+                    configType: 'privacy'  // Ensuring that only privacy settings are targeted
+                }
+            });
+
+            // Throw an error if the configuration key is invalid (does not exist in the database)
+            if (!config) {
+                throw new Error(`Invalid config key: ${configKey}`);
+            }
+
+            // Update the user's configuration value
+            await db.UserConfiguration.update({
+                configValue: configValue
+            }, {
+                where: {
+                    userId: userId,
+                    configId: config.configId
+                },
+                transaction: transaction
+            });
+        }
+
+        await transaction.commit();
+        return { message: "Privacy settings updated successfully" };
+    } catch (error) {
+        // Rollback the transaction in case of an error
+        if (transaction) await transaction.rollback();
+        console.error("Error updating privacy settings", error);
+        throw new Error("Failed to update privacy settings");
+    }
+}
+
+// Follow another user
+exports.followUser = async (req, res) => {
+    const { targetUserId } = req.body; // The user ID to follow
+    const userId = req.userId; // The ID of the user making the request
+
+    try {
+        await db.FollowRelationship.create({
+            mainUserId: userId,
+            followedUserId: targetUserId
+        });
+        res.status(200).json({ message: 'User followed successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error following user', error: error.message });
+    }
+};
+
+// Block another user
+exports.blockUser = async (req, res) => {
+    const { targetUserId } = req.body; // The user ID to block
+    const userId = req.userId; // The ID of the user making the request
+
+    try {
+        await db.Block.create({
+            blockerUserId: userId,
+            blockedUserId: targetUserId
+        });
+        res.status(200).json({ message: 'User blocked successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error blocking user', error: error.message });
+    }
+};
+
+// Unfollow a user
+exports.unfollowUser = async (req, res) => {
+    const { followedUserId } = req.params;
+    const userId = req.userId;
+
+    try {
+        await db.FollowRelationship.destroy({
+            where: { mainUserId: userId, followedUserId }
+        });
+        res.status(200).json({ message: 'Unfollowed successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error unfollowing user', error: error.message });
+    }
+};
+
+// Unblock a user
+exports.unblockUser = async (req, res) => {
+    const { blockedUserId } = req.params;
+    const userId = req.userId;
+
+    try {
+        await db.Block.destroy({
+            where: { blockerUserId: userId, blockedUserId }
+        });
+        res.status(200).json({ message: 'User unblocked successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error unblocking user', error: error.message });
+    }
+};
