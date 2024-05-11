@@ -173,7 +173,7 @@ exports.getEditions = async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'New book edition created successfully',
-            book: newBookEdition
+            book: newBookEdition,
         });
         console.log('NEW BOOK EDITION',newBookEdition)
     }

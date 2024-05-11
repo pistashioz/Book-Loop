@@ -18,7 +18,8 @@ app.use('/works', require('./routes/works.routes.js'))
 app.use('/book-in-series', require('./routes/bookInSeries.routes.js'))
 app.use('/book-editions', require('./routes/bookEdition.routes.js'))
 app.use('/publishers', require('./routes/publisher.routes.js'))
-app.use('/authors', require('./routes/person.routes.js'))
+app.use('/authors', require('./routes/author.routes.js'))
+app.use('/persons', require('./routes/person.routes.js'))
 // handle invalid routes
 app.use(notFoundHandler)
 app.listen(port, host, () => console.log(`App listening at http://${host}:${port}/`));

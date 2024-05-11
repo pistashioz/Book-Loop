@@ -1,6 +1,6 @@
 const express = require('express');
 let router = express.Router();
-const authorController = require('../controllers/person.controller');
+const authorController = require('../controllers/author.controller');
 // middleware for all routes related with works
 router.use((req, res, next) => {
     const start = Date.now();
@@ -11,12 +11,9 @@ router.use((req, res, next) => {
     next()
 })
 router.route('/')
-    .get(authorController.findAll)
-    .post(authorController.create);
+    .get(authorController.findAuthors)
 router.route('/:personId')
-    .get(authorController.findPerson)
-    //.patch(authorController.updatePerson)
-    //.delete(authorController.removePerson)
+    .get(authorController.findAuthor)
 //send a predefined error message for invalid routes on works
 router.all('*', function (req, res) {
     res.status(404).json({ message: 'The requested author resource could not be found. Please check the URL and API documentation.' });

@@ -1,7 +1,7 @@
 const db = require("../models/db.js");
 const Person = db.person;
 const { ValidationError, Op  } = require('sequelize'); //necessary for model validations using sequelize
-
+const Author = db.author
 
 exports.findAll = async (req, res) => {
     try {
@@ -22,7 +22,6 @@ exports.create = async (req, res) => {
             return res.status(400).json({ error: "Invalid role" }); 
         }
         const newPerson = await Person.create(req.body);
-        console.log('NEW AUTHOR:', newPerson)
         res.status(201).json({success: true, msg: 'New Person created', URL: `/authors/${newPerson.personId}`});
     } catch(err) {
         if (err instanceof ValidationError) {
@@ -31,5 +30,27 @@ exports.create = async (req, res) => {
         else {
             res.status(500).json({message: err.message || "Some error occurred while creating the person"})
         }
+    }
+}
+exports.findPerson = async (req, res) =>  {
+    try{
+        let person = await Person.findByPk(req.params.personId)
+        if (person === null){
+            return res.status(404).json({
+                success: false,
+                msg: `No person found with id ${req.params.personId}`
+            })
+        }
+        return res.json({
+            success: true, 
+            data:person,
+            links:  [
+                { "rel": "self", "href": `/persons/${person.personId}`, "method": "GET" },
+                { "rel": "delete", "href": `/persons/${person.personId}`, "method": "DELETE" },
+                { "rel": "modify", "href": `/persons/${person.personId}`, "method": "PUT" },
+            ],
+        })
+    } catch(err) {
+        return  res.status(400).json({message: err.message || "Some error ocurred"})
     }
 }

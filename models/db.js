@@ -27,6 +27,7 @@ db.publisher =  require("./publisher.model.js")(sequelize,DataTypes);
 db.person = require("./person.model.js")(sequelize,DataTypes);
 db.literaryReview = require("./literaryReview.model.js")(sequelize, DataTypes)
 db.commentReview = require("./commentReview.model.js")(sequelize, DataTypes)
+db.author = require("./author.model.js")(sequelize,DataTypes);
 //defining associations
 
 db.work.hasMany(db.bookEdition, { 
@@ -50,6 +51,21 @@ db.publisher.hasMany(db.bookEdition, {
     foreignKey: "publisherId"
 })
 
+db.work.hasMany(db.author, { 
+    foreignKey: 'workId' 
+}) 
+
+db.author.belongsTo(db.work, { 
+    foreignKey: 'workId'
+}) 
+
+db.person.hasMany(db.author, { 
+    foreignKey: 'personId' 
+}) 
+
+db.author.belongsTo(db.person, { 
+    foreignKey: 'personId'
+}) 
 /*
 (async () => {
     try {
