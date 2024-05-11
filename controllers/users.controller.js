@@ -30,7 +30,7 @@ exports.findAll = async (req, res) => {
             attributes: [
                 'profileImage',
                 'username',
-                [db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 'averageRating'],
+                [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
                 [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
             ],
             include: [{
@@ -46,35 +46,188 @@ exports.findAll = async (req, res) => {
             limit,
             offset
         });
-
-        const totalPages = Math.ceil(count / limit);
+        
+        const totalUsers = count.reduce((total, curr) => total + curr.count, 0);
+        const totalPages = Math.ceil(totalUsers / limit);
 
         res.status(200).json({
             data: rows,
             currentPage: page,
             totalPages,
-            totalUsers: count
+            totalUsers
         });
+
     } catch (error) {
         console.error("Error retrieving users:", error);
         res.status(500).json({ message: "Error retrieving users", error: error.message });
     }
 };
 
-
-// Retrieve a single user by ID
-exports.findOne = async (req, res) => {
+// Retrieve a single user with detailed information focused on listings and wishlist counts
+/* exports.findOne = async (req, res) => {
     const { id } = req.params;
+
     try {
-        const user = await User.findByPk(id);
-        if (!user) {
-            return res.status(404).json({ message: "User not found!!!" });
+        const listings = await db.Listing.findAll({
+            where: { sellerUserId: id }, // Ensures we're only fetching listings for the user
+            attributes: [
+                'listingId', 
+                'listingTitle', 
+                'price', 
+                'listingCondition',
+                [db.sequelize.fn("COUNT", db.sequelize.col("Wishlists.listingId")), 'likesCount']
+            ],
+            include: [
+                {
+                    model: db.Wishlist,
+                    as: 'Wishlists', // Make sure this alias matches the one in your model relationship definitions
+                    attributes: []
+                }
+            ],
+            group: ['Listing.listingId']
+        });
+
+        if (!listings) {
+            return res.status(404).send({ message: "No listings found for this user." });
         }
-        res.status(200).json(user);
+
+        res.status(200).json(listings);
     } catch (error) {
-        res.status(500).json({ message: "Error retrieving user", error: error.message });
+        console.error("Error retrieving listings:", error);
+        res.status(500).json({ message: "Error retrieving listings", error: error.message });
     }
 };
+ */
+
+
+
+// Retrieve a single user with detailed information based on tabs
+exports.findOne = async (req, res) => {
+    const { id } = req.params;
+    const tab = req.query.tab; 
+
+    try {
+        const user = await db.User.findByPk(id, {
+            attributes: [
+                'username', 
+                'profileImage', 
+                'about',
+                'deliverByHand',
+                
+                [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
+                [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount'],
+                
+            ],
+            include: [
+                {
+                    model: db.UserSocialMedia,
+                    as: 'userSocialMedias',
+                    attributes: ['socialMediaName', 'profileUrl']
+                },
+                
+                {
+                    model: db.PostalCode,
+                    as: 'postalCodeDetails',
+                    attributes: ['locality', 'country'],
+                    required: false, // Only include if showCity is true
+                    where: db.sequelize.where(db.sequelize.col('User.showCity'), true),
+                },                
+                {
+                    model: db.FollowRelationship,
+                    as: 'Followings',
+                    attributes: []
+                },
+                {
+                    model: db.FollowRelationship,
+                    as: 'Followers',
+                    attributes: []
+                },
+                {
+                    model: db.PurchaseReview,
+                    as: 'SellerReviews',
+                    attributes: []
+                }
+            ],
+            
+            group: ['User.userId']
+        });
+        
+        if (!user) {
+            return res.status(404).send({ message: "User not found." });
+        }
+        
+        
+        // Enhance user object with counts from follow relationships
+        const followingCount = await db.FollowRelationship.count({ where: { mainUserId: id } });
+        const followersCount = await db.FollowRelationship.count({ where: { followedUserId: id } });
+        
+        // Constructing the full response object
+        const responseData  = {
+            ...user.dataValues,
+            // locality: user.PostalCode ? `${user.PostalCode.locality}, ${user.PostalCode.country}` : null,
+            followingCount,
+            followersCount
+        };
+        
+        // Conditionally fetch data based on the 'tab' parameter
+        if (!tab || tab === 'listings') {
+            responseData.listings = await fetchListings(id);
+        }
+        if (tab === 'feedback') {
+            responseData.feedback = await fetchFeedback(id);
+        }
+        if (tab === 'literaryReviews') {
+            responseData.literaryReviews = await fetchLiteraryReviews(id);
+        }
+        
+        res.status(200).json(responseData);
+    } catch (error) {
+        console.error("Error retrieving user and related data:", error);
+        res.status(500).json({ message: "Error retrieving user and related data", error: error.message });
+    }
+};
+
+
+async function fetchListings(userId) {
+    return await db.Listing.findAll({
+        where: { sellerUserId: userId },
+        attributes: [
+            'listingId', 
+            'listingTitle', 
+            'price', 
+            'listingCondition',
+            [db.sequelize.fn("COUNT", db.sequelize.col("Wishlists.listingId")), 'likesCount']
+        ],
+        include: [
+            {
+                model: db.BookEdition,
+                attributes: ['title']
+            },
+            {
+                model: db.ListingImage,
+                attributes: ['imageUrl'],
+                limit: 1
+            },
+            {
+                model: db.Wishlist,
+                as: 'Wishlists',
+                attributes: [],
+                duplicating: false
+            }
+        ],
+        group: ['Listing.listingId']
+    });
+}
+
+
+async function fetchFeedback(userId) {
+    // Logic to fetch feedback reviews
+}
+
+async function fetchLiteraryReviews(userId) {
+    // Logic to fetch literary reviews
+}
+
 
 
 // Create a new user

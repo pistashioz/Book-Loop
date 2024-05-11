@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { getEnumValues } = require('../utils/sequelizeHelpers');
 
 // Helper Functions
 const validateAddressComplete = function(value, next) {
@@ -8,12 +9,6 @@ const validateAddressComplete = function(value, next) {
     }
     next();
 };
-
-function getEnumValues(sequelize, modelName, attribute) {
-    const model = sequelize.models[modelName];
-    const attrDetails = model.rawAttributes[attribute];
-    return attrDetails.values ? attrDetails.values.slice() : [];
-}
 
 // User Model Definition
 module.exports = (sequelize, DataTypes) => {

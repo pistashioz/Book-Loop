@@ -48,8 +48,8 @@ router.route('/')
 
 router.route('/:id')
     .get(usersController.findOne)
-    .put(usersController.update)
-    .delete(usersController.delete);
+/*     .put(usersController.update)
+    .delete(usersController.delete); */
 
 router.post('/login', usersController.login);
 router.post('/logout', verifyToken, usersController.logout);
