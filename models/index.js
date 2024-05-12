@@ -15,13 +15,13 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
-/*     .then(() => {
+     .then(() => {
         console.log('Connection has been established successfully.');
-        return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
-    })    */
-    .then(() => {
+        //  return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    })    
+/*     .then(() => {
         console.log('Database models were synchronized successfully.');
-    })
+    }) */
     .catch(err => {
         console.error('Unable to connect to the database:', err);
     });
@@ -48,6 +48,10 @@ db.Publisher = require('./publisher.model.js')(sequelize, DataTypes);
 db.Listing = require('./listing.model.js')(sequelize, DataTypes);
 db.ListingImage = require('./listingImage.model.js')(sequelize, DataTypes);
 db.Wishlist = require('./wishlist.model.js')(sequelize, DataTypes);
+db.LiteraryReview = require('./literaryReview.model.js')(sequelize, DataTypes);
+db.LikeReview = require('./likeReview.model.js')(sequelize, DataTypes);
+db.CommentReview = require('./commentReview.model.js')(sequelize, DataTypes);
+db.LikeComment = require('./likeComment.model.js')(sequelize, DataTypes);
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -111,6 +115,29 @@ db.Wishlist.belongsTo(db.User, { as: 'User', foreignKey: 'userId' });
 db.Listing.hasMany(db.Wishlist, { as: 'Wishlists', foreignKey: 'listingId', onDelete: 'CASCADE' });
 db.Wishlist.belongsTo(db.Listing, { as: 'Listing', foreignKey: 'listingId' });
 
+db.User.hasMany(db.LiteraryReview, { foreignKey: 'userId', onDelete: 'CASCADE' });
+db.LiteraryReview.belongsTo(db.User, { foreignKey: 'userId' });
+
+db.Work.hasMany(db.LiteraryReview, { foreignKey: 'workId', onDelete: 'CASCADE' });
+db.LiteraryReview.belongsTo(db.Work, { foreignKey: 'workId' });
+
+db.LiteraryReview.hasMany(db.LikeReview, { foreignKey: 'literaryReviewId', as: 'Likes' });
+db.LikeReview.belongsTo(db.LiteraryReview, { foreignKey: 'literaryReviewId' });
+
+db.User.hasMany(db.LikeReview, { foreignKey: 'userId', onDelete: 'CASCADE' });
+db.LikeReview.belongsTo(db.User, { foreignKey: 'userId' });
+
+db.LiteraryReview.hasMany(db.CommentReview, { foreignKey: 'literaryReviewId', onDelete: 'CASCADE', as: 'Comments' });
+db.CommentReview.belongsTo(db.LiteraryReview, { foreignKey: 'literaryReviewId', as: 'LiteraryReview' });
+
+db.User.hasMany(db.CommentReview, { foreignKey: 'userId', onDelete: 'CASCADE' });
+db.CommentReview.belongsTo(db.User, { foreignKey: 'userId', as: 'Commenter' });
+
+db.CommentReview.hasMany(db.LikeComment, { foreignKey: 'commentId', onDelete: 'CASCADE', as: 'CommentLikes' });
+db.LikeComment.belongsTo(db.CommentReview, { foreignKey: 'commentId', as: 'CommentReview' });
+
+db.User.hasMany(db.LikeComment, { foreignKey: 'userId', onDelete: 'CASCADE' });
+db.LikeComment.belongsTo(db.User, { foreignKey: 'userId' });
 
 
 module.exports = db;

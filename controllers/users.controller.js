@@ -3,7 +3,7 @@ const db = require('../models');
 const jwt = require('jsonwebtoken');
 const config = require('../config/auth.config');
 const dayjs = require('dayjs');
-const { Op, ValidationError } = require('sequelize');
+const { Op, ValidationError, where } = require('sequelize');
 
 
 // Access models through the centralized db object
@@ -105,10 +105,13 @@ exports.findAll = async (req, res) => {
 exports.findOne = async (req, res) => {
     const { id } = req.params;
     const tab = req.query.tab; 
+    const page = req.query.page || 1;
+    const limit = req.query.limit || 10;
 
     try {
         const user = await db.User.findByPk(id, {
             attributes: [
+                'userId',
                 'username', 
                 'profileImage', 
                 'about',
@@ -174,8 +177,12 @@ exports.findOne = async (req, res) => {
             responseData.listings = await fetchListings(id);
         }
         if (tab === 'feedback') {
-            responseData.feedback = await fetchFeedback(id);
+            const feedbackData = await fetchFeedback(id, page, limit);
+            responseData.feedbackCount = feedbackData.count;
+            responseData.feedback = feedbackData.rows;
+            responseData.totalPages = Math.ceil(feedbackData.count / limit);
         }
+        
         if (tab === 'literaryReviews') {
             responseData.literaryReviews = await fetchLiteraryReviews(id);
         }
@@ -193,6 +200,7 @@ async function fetchListings(userId) {
         where: { sellerUserId: userId },
         attributes: [
             'listingId', 
+            'sellerUserId', 
             'listingTitle', 
             'price', 
             'listingCondition',
@@ -220,12 +228,106 @@ async function fetchListings(userId) {
 }
 
 
-async function fetchFeedback(userId) {
-    // Logic to fetch feedback reviews
+async function fetchFeedback(sellerUserId, page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    return await db.PurchaseReview.findAndCountAll({
+        where: { sellerUserId: sellerUserId },
+        attributes: [
+            'sellerReview', 
+            'sellerRating', 
+            'sellerResponse', 
+            'reviewDate'
+        ],
+        include: [{
+            model: db.User,
+            as: 'Buyer',
+            attributes: ['username', 'profileImage']
+        }],
+        limit,
+        offset
+    });
 }
 
-async function fetchLiteraryReviews(userId) {
-    // Logic to fetch literary reviews
+
+
+async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    const reviewsWithCounts = await db.LiteraryReview.findAndCountAll({
+        where: { userId: userId },
+        include: [
+             {
+                model: db.Work,
+                attributes: ['originalTitle'],
+                include: [{
+                    model: db.BookEdition,
+                    attributes: ['coverImage'],
+                    where: {
+                        title: {
+                            [Op.eq]: db.sequelize.col('Work.originalTitle'),
+                        } 
+                    },
+                    required: false // Set to false to still include works even if no book edition matches
+                }]
+            }, 
+            {
+                model: db.CommentReview,
+                as: 'Comments',
+                attributes: ['commentId', 'comment', 'creationDate'],
+                include: [
+                    {
+                        model: db.User,
+                        as: 'Commenter',
+                        attributes: ['username', 'profileImage']
+                    },
+                    {
+                        model: db.LikeComment,
+                        as: 'CommentLikes',
+                        attributes: [[db.sequelize.fn("COUNT", db.sequelize.col("Comments.CommentLikes.commentId")), 'likeCount']]  
+                    }
+                ]
+            },
+            {
+                model: db.LikeReview,
+                as: 'Likes',
+                attributes: [[db.sequelize.fn("COUNT", db.sequelize.col("Likes.literaryReviewId")), 'likeCount']],
+                duplicating: false
+            }
+        ],
+        limit,
+        offset,
+        group: ['LiteraryReview.literaryReviewId']
+    });
+
+
+  /*   console.log(reviewsWithCounts[0].dataValues.Likes);
+    console.log(reviewsWithCounts[0].dataValues.Comments[0].dataValues.CommentLikes); */
+    // Transform the data structure to include comment counts and like counts
+/*     const reviews = reviewsWithCounts.rows.map(review => ({
+        literaryReviewId: review.literaryReviewId,
+        literaryReview: review.literaryReview,
+        literaryRating: review.literaryRating,
+        creationDate: review.creationDate,
+        workTitle: review.Work.originalTitle,
+        workCoverImage: review.dataValues.Work.dataValues.BookEditions ? review.dataValues.Work.dataValues.BookEditions[0].dataValues.coverImage : null,
+        comments: review.Comments.map(comment => ({
+            commentId: comment.commentId,
+            comment: comment.comment,
+            creationDate: comment.creationDate,
+            commenterUsername: comment.Commenter.username,
+            commenterProfileImage: comment.Commenter.profileImage,
+            likeCount: comment.CommentLikes.length // Assumes a flattened structure where likes are directly counted
+        })),
+        commentCount: review.Comments.length,
+        likeCount: review.Likes.length // Direct count of likes on the review
+    })); */
+    // console.log(reviewsWithCounts.rows[0].dataValues.Comments[0].CommentLikes); // number of reviews made by the user
+    // console.log(reviewsWithCounts.rows[0].dataValues.Comments[0].CommentLikes);
+    //console.log(reviewsWithCounts.rows.dataValues);
+/*     return {
+        count: reviewsWithCounts.count.length,
+        rows: 0,
+        totalPages: Math.ceil(reviewsWithCounts.count / limit)
+    }; */
 }
 
 
