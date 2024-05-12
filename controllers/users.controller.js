@@ -248,88 +248,68 @@ async function fetchFeedback(sellerUserId, page = 1, limit = 10) {
     });
 }
 
-
-
+/**
+ * Fetches literary reviews for a given user.
+ *
+ * @param {number} userId - The ID of the user whose reviews to fetch.
+ * @param {number} [page=1] - The page number of the reviews to fetch. Default is 1.
+ * @param {number} [limit=10] - The number of reviews to fetch per page. Default is 10.
+ *
+ * @returns {Object} An object containing the total count of reviews, the reviews themselves, and the total number of pages.
+ * @returns {Object.count} The total count of reviews.
+ * @returns {Object.rows} An array of review objects.
+ * @returns {Object.totalPages} The total number of pages of reviews.
+ */
 async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
     const offset = (page - 1) * limit;
-    const reviewsWithCounts = await db.LiteraryReview.findAndCountAll({
+    const { count, rows } = await db.LiteraryReview.findAndCountAll({
         where: { userId: userId },
-        include: [
-             {
-                model: db.Work,
-                attributes: ['originalTitle'],
-                include: [{
-                    model: db.BookEdition,
-                    attributes: ['coverImage'],
-                    where: {
-                        title: {
-                            [Op.eq]: db.sequelize.col('Work.originalTitle'),
-                        } 
-                    },
-                    required: false // Set to false to still include works even if no book edition matches
-                }]
-            }, 
-            {
-                model: db.CommentReview,
-                as: 'Comments',
-                attributes: ['commentId', 'comment', 'creationDate'],
-                include: [
-                    {
-                        model: db.User,
-                        as: 'Commenter',
-                        attributes: ['username', 'profileImage']
-                    },
-                    {
-                        model: db.LikeComment,
-                        as: 'CommentLikes',
-                        attributes: [[db.sequelize.fn("COUNT", db.sequelize.col("Comments.CommentLikes.commentId")), 'likeCount']]  
-                    }
-                ]
-            },
-            {
-                model: db.LikeReview,
-                as: 'Likes',
-                attributes: [[db.sequelize.fn("COUNT", db.sequelize.col("Likes.literaryReviewId")), 'likeCount']],
-                duplicating: false
-            }
+        attributes: [
+            'literaryReviewId', 
+            'literaryReview', 
+            'literaryRating',
+            'creationDate',
+            [db.sequelize.literal(`(SELECT COUNT(*) FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'likeCount'],
+            [db.sequelize.literal(`(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'commentCount']
         ],
+        include: [{
+            model: db.Work,
+            attributes: ['originalTitle'],
+            include: [{
+                model: db.BookEdition,
+                attributes: ['coverImage', 'ISBN', 'title'],
+                where: {
+                    title: {[Op.eq]: db.sequelize.col('Work.originalTitle')}
+                },
+                required: false 
+            }]
+        }],
         limit,
         offset,
-        group: ['LiteraryReview.literaryReviewId']
+        order: [['creationDate', 'DESC']],
+        subQuery: false
     });
 
-
-  /*   console.log(reviewsWithCounts[0].dataValues.Likes);
-    console.log(reviewsWithCounts[0].dataValues.Comments[0].dataValues.CommentLikes); */
-    // Transform the data structure to include comment counts and like counts
-/*     const reviews = reviewsWithCounts.rows.map(review => ({
+    const reviews = rows.map(review => ({
         literaryReviewId: review.literaryReviewId,
         literaryReview: review.literaryReview,
         literaryRating: review.literaryRating,
         creationDate: review.creationDate,
+        likeCount: review.dataValues.likeCount,
+        commentCount: review.dataValues.commentCount,
         workTitle: review.Work.originalTitle,
-        workCoverImage: review.dataValues.Work.dataValues.BookEditions ? review.dataValues.Work.dataValues.BookEditions[0].dataValues.coverImage : null,
-        comments: review.Comments.map(comment => ({
-            commentId: comment.commentId,
-            comment: comment.comment,
-            creationDate: comment.creationDate,
-            commenterUsername: comment.Commenter.username,
-            commenterProfileImage: comment.Commenter.profileImage,
-            likeCount: comment.CommentLikes.length // Assumes a flattened structure where likes are directly counted
-        })),
-        commentCount: review.Comments.length,
-        likeCount: review.Likes.length // Direct count of likes on the review
-    })); */
-    // console.log(reviewsWithCounts.rows[0].dataValues.Comments[0].CommentLikes); // number of reviews made by the user
-    // console.log(reviewsWithCounts.rows[0].dataValues.Comments[0].CommentLikes);
-    //console.log(reviewsWithCounts.rows.dataValues);
-/*     return {
-        count: reviewsWithCounts.count.length,
-        rows: 0,
-        totalPages: Math.ceil(reviewsWithCounts.count / limit)
-    }; */
+        bookEdition: review.Work.BookEditions[0]? {
+            coverImage: review.Work.BookEditions[0].coverImage,
+            ISBN: review.Work.BookEditions[0].ISBN,
+            title: review.Work.BookEditions[0].title
+        } : null
+    }));
+    return {
+        count,
+        rows: reviews,
+        totalPages: Math.ceil(count / limit)
+    };
 }
-
 
 
 // Create a new user
