@@ -22,7 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         timestamps: false,
         freezeTableName: true,
-        tableName: 'bookAuthor'
+        tableName: 'bookTranslator'
     });
     return BookTranslator;
 }

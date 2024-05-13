@@ -3,6 +3,10 @@ module.exports = (sequelize, DataTypes) => {
         ISBN: {
             type: DataTypes.STRING(20),
             primaryKey: true,
+            references: {
+                model: 'bookEdition',
+                key: 'ISBN' 
+              },
             collate: 'utf8mb4_general_ci', 
             allowNull: false,
             unique: true,

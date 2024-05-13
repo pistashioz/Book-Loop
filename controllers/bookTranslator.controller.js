@@ -5,12 +5,15 @@ const { ValidationError, Op  } = require('sequelize'); //necessary for model val
 //ta a dar  "message": "Unknown column 'bookTranslator.editionISBN' in 'field list'"
 exports.findTranslators = async (req, res) => {
     try {
+ 
+        console.log(BookTranslator)
         const translators = await BookTranslator.findAll({
             include: [{
                 model: db.person,
                 attributes: ['personName']
-            }]
+            }],
         }); // Wait for the promise to resolve
+        
         return res.status(200).send(translators);
     }
     catch (error) {
