@@ -301,7 +301,7 @@ async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
 exports.create = async (req, res) => {
 
 // Extract the required fields from the request body
-const { username, email, password, birthDate,activateConfigs, acceptTAndC } = req.body;
+const { username, email, password, birthDate, activateConfigs, acceptTAndC } = req.body;
 
 if (!username || !email || !password || !birthDate || !acceptTAndC) {
     return res.status(400).json({ message: "All fields including birth date must be provided and Terms must be accepted" });
@@ -342,6 +342,7 @@ try {
             user: newUser
         });    
     } catch (error) {
+        console.error("Detailed error: ", error);
         if (error instanceof ValidationError) {
             return res.status(400).json({
                 message: "Validation error",
