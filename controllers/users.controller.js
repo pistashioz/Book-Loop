@@ -63,50 +63,15 @@ exports.findAll = async (req, res) => {
     }
 };
 
-// Retrieve a single user with detailed information focused on listings and wishlist counts
-/* exports.findOne = async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const listings = await db.Listing.findAll({
-            where: { sellerUserId: id }, // Ensures we're only fetching listings for the user
-            attributes: [
-                'listingId', 
-                'listingTitle', 
-                'price', 
-                'listingCondition',
-                [db.sequelize.fn("COUNT", db.sequelize.col("Wishlists.listingId")), 'likesCount']
-            ],
-            include: [
-                {
-                    model: db.Wishlist,
-                    as: 'Wishlists', // Make sure this alias matches the one in your model relationship definitions
-                    attributes: []
-                }
-            ],
-            group: ['Listing.listingId']
-        });
-
-        if (!listings) {
-            return res.status(404).send({ message: "No listings found for this user." });
-        }
-
-        res.status(200).json(listings);
-    } catch (error) {
-        console.error("Error retrieving listings:", error);
-        res.status(500).json({ message: "Error retrieving listings", error: error.message });
-    }
-};
+/**
+ * Retrieves detailed information about a specific user based on user ID and optional tab parameter.
+ * It conditionally fetches listings, feedback, or literary reviews based on the provided tab query.
+ * @param {Request} req - The request object containing user ID in params and optional tab query.
+ * @param {Response} res - The response object used to return data or error messages.
  */
-
-
-
-// Retrieve a single user with detailed information based on tabs
 exports.findOne = async (req, res) => {
     const { id } = req.params;
     const tab = req.query.tab; 
-    const page = req.query.page || 1;
-    const limit = req.query.limit || 10;
 
     try {
         const user = await db.User.findByPk(id, {
@@ -172,15 +137,13 @@ exports.findOne = async (req, res) => {
             followersCount
         };
         
+        
         // Conditionally fetch data based on the 'tab' parameter
         if (!tab || tab === 'listings') {
-            responseData.listings = await fetchListings(id);
-        }
+          responseData.listings = await fetchListings(id);
+        }        
         if (tab === 'feedback') {
-            const feedbackData = await fetchFeedback(id, page, limit);
-            responseData.feedbackCount = feedbackData.count;
-            responseData.feedback = feedbackData.rows;
-            responseData.totalPages = Math.ceil(feedbackData.count / limit);
+            responseData.feedback = await fetchFeedback(id);
         }
         
         if (tab === 'literaryReviews') {
@@ -195,16 +158,23 @@ exports.findOne = async (req, res) => {
 };
 
 
-async function fetchListings(userId) {
-    return await db.Listing.findAll({
-        where: { sellerUserId: userId },
+/**
+ * Fetches listings for a given seller user with pagination, adjusting for grouped count.
+ * @param {number} sellerUserId - The ID of the user whose listings to fetch.
+ * @param {number} [page=1] - The page number of the listings to fetch.
+ * @param {number} [limit=10] - The number of listings to fetch per page.
+ * @returns {Object} An object containing the total count of listings, the listings themselves, and the total number of pages.
+ */
+async function fetchListings(sellerUserId, page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    const { count, rows } = await db.Listing.findAndCountAll({
+        where: { sellerUserId: sellerUserId },
         attributes: [
-            'listingId', 
-            'sellerUserId', 
-            'listingTitle', 
-            'price', 
+            'listingId',
+            'listingTitle',
+            'price',
             'listingCondition',
-            [db.sequelize.fn("COUNT", db.sequelize.col("Wishlists.listingId")), 'likesCount']
+            [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
         ],
         include: [
             {
@@ -216,18 +186,32 @@ async function fetchListings(userId) {
                 attributes: ['imageUrl'],
                 limit: 1
             },
-            {
-                model: db.Wishlist,
-                as: 'Wishlists',
-                attributes: [],
-                duplicating: false
-            }
         ],
-        group: ['Listing.listingId']
+        group: ['Listing.listingId'],
+        limit,
+        offset,
+        subQuery: false,
+        order: [['listingId', 'ASC']] // Sorting by listing ID for consistency
     });
+
+    // Calculate the total count from grouped results
+    const totalCount = count.reduce((total, item) => total + item.count, 0);
+
+    return {
+        count: totalCount,
+        rows,
+        totalPages: Math.ceil(totalCount / limit)
+    };
 }
 
 
+/**
+ * Fetches feedback (purchase reviews) for a given seller with pagination.
+ * @param {number} sellerUserId - The user ID of the seller whose feedback is to be retrieved.
+ * @param {number} [page=1] - The page number for pagination.
+ * @param {number} [limit=10] - The number of feedback entries per page.
+ * @returns {Object} An object containing the count of feedback, array of feedback, and total pages.
+ */
 async function fetchFeedback(sellerUserId, page = 1, limit = 10) {
     const offset = (page - 1) * limit;
     return await db.PurchaseReview.findAndCountAll({
@@ -304,6 +288,7 @@ async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
             title: review.Work.BookEditions[0].title
         } : null
     }));
+    console.log(count)
     return {
         count,
         rows: reviews,
@@ -970,7 +955,8 @@ async function fetchPrivacySettings(userId) {
         const response = {
             dataTracking: {},
             personalization: {},
-            marketing: {}
+            marketing: {},
+            account: {}
         };
 
         // Map to categorize each config setting based on its key
@@ -978,7 +964,9 @@ async function fetchPrivacySettings(userId) {
             allow_data_tracking: 'dataTracking',
             personalise_experience: 'personalization',
             feature_books_in_marketing: 'marketing',
-            notify_owners_on_bookmark: 'marketing'
+            notify_owners_on_bookmark: 'marketing',
+            allow_see_following: 'account',
+            allow_see_followers: 'account'
         };
 
         // Populate the response object based on predefined categories
@@ -1241,42 +1229,33 @@ async function updatePrivacySettings(userId, settings) {
     try {
         transaction = await db.sequelize.transaction();
 
-        // Iterate over the settings provided in the request body
         for (const [configKey, configValue] of Object.entries(settings)) {
-            // First, fetch the corresponding configuration ID
             const config = await db.Configuration.findOne({
-                where: {
-                    configKey: configKey,
-                    configType: 'privacy'  // Ensuring that only privacy settings are targeted
-                }
+                where: { configKey, configType: 'privacy' }
             });
 
-            // Throw an error if the configuration key is invalid (does not exist in the database)
             if (!config) {
                 throw new Error(`Invalid config key: ${configKey}`);
             }
 
-            // Update the user's configuration value
-            await db.UserConfiguration.update({
+            const result = await db.UserConfiguration.upsert({
+                userId: userId,
+                configId: config.configId,
                 configValue: configValue
-            }, {
-                where: {
-                    userId: userId,
-                    configId: config.configId
-                },
-                transaction: transaction
-            });
+            }, { transaction: transaction });
+
+            console.log(`Update result for ${configKey}:`, result);
         }
 
         await transaction.commit();
         return { message: "Privacy settings updated successfully" };
     } catch (error) {
-        // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating privacy settings", error);
-        throw new Error("Failed to update privacy settings");
+        return { message: "Failed to update privacy settings", error: error.message || error.toString() };
     }
 }
+
 
 // Follow another user
 exports.followUser = async (req, res) => {
@@ -1328,6 +1307,104 @@ exports.unfollowUser = async (req, res) => {
     }
 };
 
+// Remove a follower
+exports.removeFollower = async (req, res) => {
+    const { followerUserId } = req.params;
+    const userId = req.userId; // The ID of the user initiating the request
+
+    // Prevent a user from trying to remove themselves
+    if (userId == followerUserId) {
+        return res.status(400).json({ message: "Cannot remove yourself as a follower." });
+    }
+
+    try {
+        const relationship = await db.FollowRelationship.findOne({
+            where: { mainUserId: followerUserId, followedUserId: userId }
+        });
+
+        if (!relationship) {
+            return res.status(404).json({ message: "This user is not following you." });
+        }
+
+        await relationship.destroy();
+        res.status(200).json({ message: 'Follower removed successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error removing follower', error: error.message });
+    }
+};
+
+/**
+ * Lists the users that the specified user is following.
+ *
+ * @param {object} req - The request object
+ * @param {object} res - The response object
+ *
+ * @returns {Promise<void>}
+ *
+ * @throws Will throw an error if the user's following list is private.
+ * @throws Will throw an error if there is an issue retrieving the following list.
+ */
+exports.listFollowing = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Fetch the user's privacy setting for their following list
+        const privacy = await db.UserConfiguration.findOne({
+            where: { userId: id, configId: 14 },
+            attributes: ['configValue']
+        });
+
+        // If the user's following list is private, return an error
+        if (!privacy || privacy.configValue!== 'true') {
+            return res.status(403).json({ message: "The user's following list is private." });
+        }
+
+        // Fetch the users that the specified user is following
+        const following = await db.FollowRelationship.findAll({
+            where: { mainUserId: id },
+            include: {
+                model: db.User,
+                as: 'FollowedUser',
+                attributes: ['userId', 'username', 'profileImage']
+            }
+        });
+
+        // Return the list of users the specified user is following
+        res.status(200).json(following);
+    } catch (error) {
+        // If there is an issue retrieving the following list, return an error
+        res.status(500).json({ message: 'Error retrieving following list', error: error.message });
+    }
+};
+
+exports.listFollowers = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const privacy = await db.UserConfiguration.findOne({
+            where: { userId: id, configId: 15 },
+            attributes: ['configValue']
+        });
+
+        if (!privacy || privacy.configValue !== 'true') {
+            return res.status(403).json({ message: "The user's followers list is private." });
+        }
+
+        const followers = await db.FollowRelationship.findAll({
+            where: { followedUserId: id },
+            include: {
+                model: db.User,
+                as: 'MainUser',
+                attributes: ['userId', 'username', 'profileImage']
+            }
+        });
+
+        res.status(200).json(followers);
+    } catch (error) {
+        res.status(500).json({ message: 'Error retrieving followers list', error: error.message });
+    }
+};
+
 // Block another user
 exports.blockUser = async (req, res) => {
     const targetUserId = req.body.targetUserId; 
@@ -1376,5 +1453,25 @@ exports.unblockUser = async (req, res) => {
         res.status(200).json({ message: 'User unblocked successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error unblocking user', error: error.message });
+    }
+};
+
+exports.listBlockedUsers = async (req, res) => {
+    const userId = req.userId; 
+
+    try {
+        const blockedUsers = await db.Block.findAll({
+            where: { blockerUserId: userId },
+            attributes: [],
+            include: [{
+                model: db.User,
+                as: 'BlockedUser',
+                attributes: ['userId', 'username', 'profileImage']
+            }]
+        });
+
+        res.status(200).json(blockedUsers);
+    } catch (error) {
+        res.status(500).json({ message: 'Error retrieving blocked users', error: error.message });
     }
 };

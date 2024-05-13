@@ -33,13 +33,17 @@ router.post('/me/follow', verifyToken, usersController.followUser);
 // Blocking a user
 router.post('/me/block', verifyToken, usersController.blockUser);
 
-/* // Getting list of followers and followings
-router.get('/:userId/following', usersController.getFollowing);
-router.get('/:userId/followers', usersController.getFollowers); */
+// Getting list of followers and followings
+router.get('/:id/following', usersController.listFollowing);
+router.get('/:id/followers', usersController.listFollowers);
 
 // Unfollowing and unblocking
 router.delete('/me/following/:followedUserId', verifyToken, usersController.unfollowUser);
+router.delete('/me/followers/:followerUserId', verifyToken, usersController.removeFollower);
 router.delete('/me/blocked/:blockedUserId', verifyToken, usersController.unblockUser);
+
+// Get list of blocked users
+router.get('/me/blocked', verifyToken, usersController.listBlockedUsers);
 
 // General user routes
 router.route('/')
