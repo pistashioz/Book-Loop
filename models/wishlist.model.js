@@ -26,10 +26,6 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'wishlist',
       timestamps: false,
       freezeTableName: true,
-/*       indexes: [{ 
-        unique: true,
-        fields: ['userId', 'listingId']
-      }] */
     });
   
     return Wishlist;

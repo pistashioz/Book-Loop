@@ -39,7 +39,7 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             validate: {
                 notNull: { msg: 'Password cannot be null or empty!' },
-                len: { args: [8, 60], msg: 'Password should be between 8 and 60 characters' } // Adjusted maximum length
+                len: { args: [5, 60], msg: 'Password should be between 8 and 60 characters' } // Adjusted maximum length
             }
         },        
         birthDate: {
