@@ -14,7 +14,7 @@ router.route('/')
     .get(publisherController.findAll)
     .post(publisherController.create)
 router.route('/:publisherId/works')
-    //.get(publisherController.findAll)
+    .get(publisherController.findPublishersWorks)
     
 //send a predefined error message for invalid routes on book in series
 router.all('*', function (req, res) {

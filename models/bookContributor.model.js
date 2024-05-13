@@ -1,13 +1,13 @@
 module.exports = (sequelize, DataTypes) => {
-    const BookTranslator = sequelize.define("bookTranslator", {
+    const BookContributor = sequelize.define("bookContributor", {
         editionISBN: {
             type: DataTypes.STRING(20),
-            collate: 'utf8mb4_general_ci', 
             primaryKey: true,
             references: {
-                model: "bookEdition",
-                key: "ISBN"
-            },
+                model: 'bookEdition',
+                key: 'ISBN' 
+              },
+            collate: 'utf8mb4_general_ci', 
             allowNull: false
         },
         personId: {
@@ -22,7 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         timestamps: false,
         freezeTableName: true,
-        tableName: 'bookTranslator'
+        tableName: 'bookContributor'
     });
-    return BookTranslator;
+    return BookContributor;
 }

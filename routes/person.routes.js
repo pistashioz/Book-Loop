@@ -15,8 +15,8 @@ router.route('/')
     .post(authorController.create);
 router.route('/:personId')
     .get(authorController.findPerson)
-    //.patch(authorController.updatePerson)
-    //.delete(authorController.removePerson)
+    .patch(authorController.updatePerson)
+    .delete(authorController.removePerson)
 //send a predefined error message for invalid routes on works
 router.all('*', function (req, res) {
     res.status(404).json({ message: 'The requested author resource could not be found. Please check the URL and API documentation.' });

@@ -12,7 +12,7 @@ router.use((req, res, next) => {
 })
 router.route('/')
     .get(authorController.findAuthors)
-router.route('/:personId')
+router.route('/:workId')
     .get(authorController.findAuthor)
 //send a predefined error message for invalid routes on works
 router.all('*', function (req, res) {

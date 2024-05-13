@@ -20,8 +20,9 @@ app.use('/book-editions', require('./routes/bookEdition.routes.js'))
 app.use('/publishers', require('./routes/publisher.routes.js'))
 app.use('/authors', require('./routes/bookAuthor.routes.js'))
 app.use('/persons', require('./routes/person.routes.js'))
-app.use('/translators', require('./routes/bookTranslator.routes.js'))
+app.use('/contributors', require('./routes/bookContributor.routes.js'))
 app.use('/genres', require('./routes/genre.routes.js'))
+app.use('/book-genres', require('./routes/bookGenre.routes.js'))
 // handle invalid routes
 app.use(notFoundHandler)
 app.listen(port, host, () => console.log(`App listening at http://${host}:${port}/`));

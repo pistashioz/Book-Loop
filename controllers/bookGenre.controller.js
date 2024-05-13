@@ -1,17 +1,12 @@
 const db = require("../models/db.js");
-const BookAuthor = db.bookAuthor;
+const BookGenre = db.bookGenre;
 const { ValidationError, Op  } = require('sequelize'); //necessary for model validations using sequelize
 
 
-exports.findAuthors = async (req, res) => {
+exports.findAll = async (req, res) => {
     try {
-        const authors = await BookAuthor.findAll({
-            include: [{
-                model: db.person,
-                attributes: ['personName']
-            }]
-        }); // Wait for the promise to resolve
-        return res.status(200).send(authors);
+        const bookGenres = await BookGenre.findAll(); // Wait for the promise to resolve
+        return res.status(200).send(bookGenres);
     }
     catch (error) {
         return res.status(400).send({
@@ -19,25 +14,22 @@ exports.findAuthors = async (req, res) => {
         })
     }
 }
-exports.findAuthor = async (req, res) => {
+exports.findBookGenre = async (req, res) => {
     try {
-        console.log(req.params.personId)
-        let author = await BookAuthor.findOne({where: {personId: {[Op.eq]: req.params.personId}}})
-        console.log(author)
-        if (author === null){
+        let genre = await BookGenre.findAll({ where: { workId: { [Op.eq]: req.params.workId} } ,
+            include: [{
+                model: db.genre,
+                attributes: ['genreName']
+            }]});
+        if (genre === null){
             return res.status(404).json({
                 success: false,
-                msg: `No author found with id ${req.params.personId}`
+                msg: `No genre found for work with id ${req.params.workId}`
             })
         }
         return res.json({
             success: true, 
-            data:author,
-            links:  [
-                { "rel": "self", "href": `/authors/${author.personId}`, "method": "GET" },
-                { "rel": "delete", "href": `/authors/${author.personId}`, "method": "DELETE" },
-                { "rel": "modify", "href": `/authors/${author.personId}`, "method": "PUT" },
-            ],
+            data:genre,
         })
     }
     catch (error) {

@@ -20,6 +20,8 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 
 const db = {}; //object to be exported
 db.sequelize = sequelize
+
+// load models
 db.work  = require("./works.model.js")(sequelize, DataTypes);
 db.bookInSeries = require("./bookInSeries.model.js")(sequelize, DataTypes);
 db.bookEdition = require("./bookEdition.model.js")(sequelize, DataTypes);
@@ -28,14 +30,14 @@ db.person = require("./person.model.js")(sequelize,DataTypes);
 db.literaryReview = require("./literaryReview.model.js")(sequelize, DataTypes)
 db.commentReview = require("./commentReview.model.js")(sequelize, DataTypes)
 db.bookAuthor = require("./bookAuthor.model.js")(sequelize,DataTypes);
-db.bookTranslator = require("./bookTranslator.model.js")(sequelize,DataTypes);
+db.bookContributor = require("./bookContributor.model.js")(sequelize,DataTypes);
 db.bookGenre = require("./bookGenre.model.js")(sequelize,DataTypes);
 db.genre = require('./genre.model.js')(sequelize,DataTypes)
 db.likeReview = require('./likeReview.model.js')(sequelize,DataTypes)
 db.likeComment = require('./likeComment.model.js')(sequelize,DataTypes)
 db.User = require('./user.model.js')(sequelize,DataTypes)
-//defining associations
 
+//defining associations
 db.bookInSeries.hasMany(db.work, { foreignKey: 'seriesId'});
 db.work.belongsTo(db.bookInSeries, { foreignKey: 'seriesId' });
 
@@ -78,11 +80,11 @@ db.bookAuthor.belongsTo(db.person, { foreignKey: 'personId', onDelete: 'CASCADE'
 db.work.hasMany(db.bookGenre, { foreignKey: 'workId' }) 
 db.bookGenre.belongsTo(db.work, { foreignKey: 'workId'}) 
 
-db.person.hasMany(db.bookTranslator, { foreignKey: 'personId', onDelete: 'CASCADE' }) 
-db.bookTranslator.belongsTo(db.person, { foreignKey: 'personId', onDelete: 'CASCADE' }) 
+db.person.hasMany(db.bookContributor, { foreignKey: 'personId', onDelete: 'CASCADE' }) 
+db.bookContributor.belongsTo(db.person, { foreignKey: 'personId', onDelete: 'CASCADE' }) 
 
-db.bookEdition.hasMany(db.bookTranslator, { foreignKey: 'ISBN' }) 
-db.bookTranslator.belongsTo(db.bookEdition, { foreignKey: 'ISBN'}) 
+db.bookEdition.hasMany(db.bookContributor, { foreignKey: 'editionISBN' }) 
+db.bookContributor.belongsTo(db.bookEdition, { foreignKey: 'editionISBN'}) 
 
 db.genre.hasMany(db.bookGenre, {  foreignKey: 'genreId' }) 
 db.bookGenre.belongsTo(db.genre, { foreignKey: 'genreId'}) 

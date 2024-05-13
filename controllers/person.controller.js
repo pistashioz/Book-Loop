@@ -54,3 +54,48 @@ exports.findPerson = async (req, res) =>  {
         return  res.status(400).json({message: err.message || "Some error ocurred"})
     }
 }
+
+exports.updatePerson = async (req, res) => {
+    try {
+        let affectedRows = await Person.update(req.body, {where: {personId:req.params.personId}})
+        if (affectedRows[0] === 0){
+            return res.status(200).json({
+                success:true,
+                msg: `No updates were made on person with ID ${req.params.personId}`
+            })
+        }
+        return res.json({
+            success: true,
+            msg: `Work with ID ${req.params.personId} was updated successfully.`
+        });
+        
+    }
+    catch(err){
+        if (err instanceof ValidationError)
+            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+        else
+            res.status(500).json({
+                success: false, msg: err.message || "Some error occurred while updating the work."
+            });
+    }
+}
+
+exports.removePerson = async (req, res) => {
+    try {
+        const personId = req.params.personId
+        const found = await Person.destroy({where:{personId}})
+        console.log(found)
+        if(found === 1){
+            return res.status(204).json({
+                success: true, 
+                msg: `Person with id ${personId} was successfully deleted!`
+            });
+        }
+        return res.status(404).json({
+            success: false, msg: `Cannot find any person with ID ${personId}`
+        })
+    }
+    catch(err) {
+        return res.status(400).json({message: err.message || 'Invalid or incomplete data provided.'});
+    }
+}
