@@ -1,12 +1,13 @@
 module.exports = (sequelize, DataTypes) => {
-    const Author = sequelize.define("author", {
+    const bookAuthor = sequelize.define("bookAuthor", {
         workId: {
             type: DataTypes.INTEGER(11),
             primaryKey: true,
             references: {
                 model: "work",
                 key: "workId"
-            }
+            },
+            allowNull: false
         },
         personId: {
             type: DataTypes.INTEGER(11),
@@ -14,12 +15,13 @@ module.exports = (sequelize, DataTypes) => {
             references: {
                 model: "person",
                 key: "personId"
-            }
+            },
+            allowNull: false
         },
     }, {
         timestamps: false,
         freezeTableName: true,
-        tableName: 'author'
+        tableName: 'bookAuthor'
     });
-    return Author;
+    return bookAuthor;
 }

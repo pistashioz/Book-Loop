@@ -1,6 +1,6 @@
 const express = require('express');
 let router = express.Router();
-const authorController = require('../controllers/author.controller');
+const authorController = require('../controllers/bookAuthor.controller');
 // middleware for all routes related with works
 router.use((req, res, next) => {
     const start = Date.now();

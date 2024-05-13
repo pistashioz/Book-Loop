@@ -1,15 +1,14 @@
 const db = require("../models/db.js");
-const Author = db.author;
-const Person = db.person
+const BookAuthor = db.bookAuthor;
 const { ValidationError, Op  } = require('sequelize'); //necessary for model validations using sequelize
 
 
 exports.findAuthors = async (req, res) => {
     try {
-        const authors = await Person.findAll({where: { roles: { [Op.like]: '%author%' }}}, {
+        const authors = await BookAuthor.findAll({
             include: [{
-                model: db.author,
-                attributes: ['workId', 'personId']
+                model: db.person,
+                attributes: ['personName']
             }]
         }); // Wait for the promise to resolve
         return res.status(200).send(authors);
@@ -22,7 +21,9 @@ exports.findAuthors = async (req, res) => {
 }
 exports.findAuthor = async (req, res) => {
     try {
-        let author = await Person.findByPk(req.params.personId)
+        console.log(req.params.personId)
+        let author = await BookAuthor.findOne({where: {personId: {[Op.eq]: req.params.personId}}})
+        console.log(author)
         if (author === null){
             return res.status(404).json({
                 success: false,
