@@ -4,6 +4,9 @@ const Person = db.person
 const BookEdition = db.bookEdition;
 const LiteraryReview = db.literaryReview;
 const LiteraryComments = db.commentReview
+const User = db.User
+const LikeReview = db.likeReview
+const LikeComment = db.likeComment
 const { ValidationError, ForeignKeyConstraintError, Op  } = require('sequelize'); //necessary for model validations using sequelize
 exports.findAll = async (req, res) => {
     try {
@@ -258,7 +261,16 @@ exports.getReviews = async (req, res) => {
         let reviews = await LiteraryReview.findAll({
             where: { // Add both conditions
                 workId: { [Op.eq]: req.params.workId }
+            }/*,
+            include: [{
+                model: User, 
+                through: LikeReview,
+                attributes: []
+            }],
+            attributes:{
+                include: [sequelize.fn('COUNT', db.sequelize.col('users.userId')), 'likeCount']
             },
+            goup:['literaryReview.literaryReviewId'],*/,
             raw: true 
         })
         reviews.forEach(review => {
@@ -372,6 +384,68 @@ exports.deleteReview = async(req, res)=>{
         });
     };  
 }
+exports.likeReview = async(req, res) => {
+    try{
+        const reviewId = req.params.literaryReviewId
+        console.log(reviewId)
+        const userId = req.userId
+
+        console.log(userId)
+        const review =  await LiteraryReview.findByPk(reviewId)
+        if (review === null){
+            return res.status(404).json({success: false, msg: 'Literary review not found'})
+        }
+        const existingLike = await LikeReview.findOne({
+            where: {literaryReviewId: reviewId, userId: userId}
+        })
+        if (existingLike){
+            return res.status(400).json({
+                success: false,
+                msg: 'You already liked this review'
+            })
+        }
+        const newLike = await LikeReview.create({literaryReviewId: reviewId, userId: userId })
+        return res.status(201).json({
+            success: true,
+            msg: 'Literary review liked successfully.',
+            data: newLike
+        })
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ 
+          success: false, 
+          msg: 'Error liking literary review.' 
+        })
+    }
+}
+exports.removeLikeReview = async (req, res) => {
+    try {
+        const reviewId = req.params.literaryReviewId;
+        const userId = req.userId; 
+        const existingLike = await db.likeReview.findOne({
+          where: { literaryReviewId: reviewId, userId: userId }
+        });
+        if (!existingLike) {
+          return res.status(404).json({ 
+            success: false, 
+            msg: 'Like not found.' 
+          });
+        }
+        await existingLike.destroy();
+    
+        return res.status(200).json({ 
+          success: true, 
+          msg: 'Literary review unliked successfully.' 
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ 
+          success: false, 
+          msg: 'Error unliking literary review.' 
+        });
+      }
+}
 exports.getReviewsComments = async(req, res)=>{
     try {
         let comments = await LiteraryComments.findAll({
@@ -474,3 +548,56 @@ exports.removeCommentFromReview = async(req, res) => {
         });
     };
 }
+
+
+exports.likeComment = async (req, res) => {
+    try {
+      const commentId = req.params.commentId;
+      //const userId = req.userId; 
+      const userId = 3
+      console.log(commentId)
+      const comment = await LiteraryComments.findByPk(commentId);
+      console.log('comment:',comment)
+     
+      if (!comment) {
+        return res.status(404).json({ success: false, msg: 'Comment not found.' });
+      }
+  
+      const existingLike = await LikeComment.findOne({
+        where: { commentId, userId }
+      });
+      console.log('existing like: ', existingLike)
+      
+      if (existingLike) {
+        return res.status(400).json({ success: false, msg: 'Comment already liked.' });
+      }
+      await LikeComment.create({ commentId: commentId, userId: userId });
+      
+      return res.status(201).json({ success: true, msg: 'Comment liked successfully.' });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, msg: 'Error liking comment.' });
+    }
+  };
+  
+  exports.removeLikeComment = async (req, res) => {
+    try {
+      const commentId = req.params.commentId;
+      const userId = req.userId;
+  
+      const existingLike = await LikeComment.findOne({
+        where: { commentId, userId }
+      });
+  
+      if (!existingLike) {
+        return res.status(404).json({ success: false, msg: 'Like not found.' });
+      }
+  
+      await existingLike.destroy();
+  
+      return res.status(200).json({ success: true, msg: 'Comment unliked successfully.' });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, msg: 'Error unliking comment.' });
+    }
+  };

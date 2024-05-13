@@ -33,11 +33,16 @@ router.route('/:workId/reviews/:literaryReviewId/comments')
 router.route('/:workId/reviews/:literaryReviewId/comments/:commentId') 
     .patch(workController.editCommentOfReview)
     .delete(workController.removeCommentFromReview)
+router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
+    .post(workController.likeComment)
+    .delete(workController.removeLikeComment)
 router.route('/:workId/reviews/:literaryReviewId')
    .patch(workController.updateReview)
    .get(workController.getReview)
-    .delete(workController.deleteReview)
-
+   .delete(workController.deleteReview)
+router.route('/:workId/reviews/:literaryReviewId/likes')
+    .post(workController.likeReview)
+    .delete(workController.removeLikeReview)
 //send a predefined error message for invalid routes on works
 router.all('*', function (req, res) {
     res.status(404).json({ message: 'The requested work resource could not be found. Please check the URL and API documentation.' });
