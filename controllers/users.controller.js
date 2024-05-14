@@ -1584,9 +1584,12 @@ exports.createEntry = async (req, res) => {
 // Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {
     try {
-        const { type } = req.query;
-        let whereClause = { userId: req.userId };
-        
+        const { type, page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+        const userId = req.userId;
+
+        let whereClause = { userId };
+
         if (type) {
             if (type === 'search') {
                 // Fetch search term entries
@@ -1599,27 +1602,28 @@ exports.getEntries = async (req, res) => {
                 }
                 whereClause.entityTypeId = entityType.entityTypeId;
             }
-        } else if (type === 'listing' || !type) {
-            // Default to listings
+        } else {
+            // Default to listings if no type is provided
             const entityType = await EntityType.findOne({ where: { entityTypeName: 'listing' } });
             if (!entityType) {
                 return res.status(404).json({ message: 'Default entity type (listing) not found' });
             }
-            whereClause.entityTypeId = entityType.entityTypeId;     
+            whereClause.entityTypeId = entityType.entityTypeId;
         }
-        
-        const entries = await NavigationHistory.findAll({
+
+        const { rows: entries, count: totalCount } = await NavigationHistory.findAndCountAll({
             where: whereClause,
             include: [{ model: EntityType, attributes: ['entityTypeName'] }],
-            order: [['dateTime', 'DESC']]
+            order: [['dateTime', 'DESC']],
+            limit: type === 'search' ? 5 : limit,
+            offset
         });
-        console.log(entries);
+
         // Retrieve additional details based on the entityType
         const detailedEntries = await Promise.all(entries.map(async (entry) => {
             let details = null;
-            
+
             if (entry.entityTypeId === 1) { // User
-                console.log(typeof entry.elementId);
                 details = await User.findOne({
                     where: { userId: entry.elementId },
                     attributes: [
@@ -1637,8 +1641,6 @@ exports.getEntries = async (req, res) => {
                     group: ['User.userId']
                 });
             } else if (entry.entityTypeId === 2) { // Listing
-                console.log(`Looking up listing ${entry.elementId}`);
-                console.log(typeof entry.elementId);
                 const listing = await Listing.findOne({
                     where: { listingId: entry.elementId },
                     attributes: [
@@ -1654,7 +1656,7 @@ exports.getEntries = async (req, res) => {
                     ],
                     group: ['Listing.listingId']
                 });
-                console.log(listing);
+
                 if (listing) {
                     details = {
                         listingId: listing.listingId,
@@ -1694,19 +1696,27 @@ exports.getEntries = async (req, res) => {
                     searchTerm: entry.searchTerm
                 };
             }
-            
+
             return {
                 historyId: entry.historyId,
                 details
             };
         }));
-        
-        res.status(200).json(detailedEntries);
+
+        const totalPages = Math.ceil(totalCount / limit);
+
+        res.status(200).json({
+            currentPage: parseInt(page, 10),
+            totalPages,
+            totalCount,
+            data: detailedEntries
+        });
     } catch (error) {
         console.error("Error fetching navigation history:", error);
         res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
     }
 };
+
 
 
 

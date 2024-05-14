@@ -43,6 +43,11 @@ app.get('/', (req, res) => {
 const userRoutes = require('./routes/users.routes'); // Ensure path accuracy
 app.use('/users', userRoutes); // Mount the user routes at '/users' endpoint
 
+// Import and use wishlist routes from the wishlist.routes.js file
+const wishlistRoutes = require('./routes/wishlist.routes');
+app.use('/wishlist', wishlistRoutes);
+
+
 // Catch-all for any unhandled routes, sending a 404 response
 app.all('*', (req, res) => {
   res.status(404).send('Resource not found. Please check the URL.');

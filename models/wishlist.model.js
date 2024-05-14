@@ -1,32 +1,33 @@
 module.exports = (sequelize, DataTypes) => {
-    const Wishlist = sequelize.define('Wishlist', {
-      userId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'user',
-          key: 'userId'
-        },
-        primaryKey: true 
+  const Wishlist = sequelize.define('Wishlist', {
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'user',
+        key: 'userId'
       },
-      listingId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'listing',
-          key: 'listingId'
-        },
-        primaryKey: true 
+      primaryKey: true 
+    },
+    listingId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'listing',
+        key: 'listingId'
       },
-      addedDate: {
-        type: DataTypes.DATE,
-        allowNull: false
-      }
-    }, {
-      tableName: 'wishlist',
-      timestamps: false,
-      freezeTableName: true,
-    });
-  
-    return Wishlist;
+      primaryKey: true 
+    },
+    addedDate: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW
+    }
+  }, {
+    tableName: 'wishlist',
+    timestamps: false,
+    freezeTableName: true,
+  });
+
+  return Wishlist;
 };
