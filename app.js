@@ -32,8 +32,8 @@ app.use((req, res, next) => {
 });
 
 // Import and initialize the cron jobs
-require('./CronJobs/tokenCleanup'); 
-require('./CronJobs/suspensionCleanup'); 
+require('./cronJobs/tokenCleanup'); 
+require('./cronJobs/suspensionCleanup'); 
 
 // Define a basic route to check the server status
 app.get('/', (req, res) => {
