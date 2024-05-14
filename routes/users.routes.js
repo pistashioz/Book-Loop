@@ -47,11 +47,11 @@ router.get('/me/blocked', verifyToken, usersController.listBlockedUsers);
 
 // Navigation history routes
 router.route('/me/navigation-history')
-    .post('/me/navigation-history', verifyToken, navigationHistoryController.createEntry)
-    .get('/me/navigation-history', verifyToken, navigationHistoryController.getEntries);
+    .post(verifyToken, usersController.createEntry)
+    .get(verifyToken, usersController.getEntries);
 
-router.delete('/me/navigation-history/:id?', verifyToken, navigationHistoryController.deleteEntry);
-router.delete('/me/navigation-history', verifyToken, navigationHistoryController.deleteAllEntries);
+router.delete('/me/navigation-history/:id?', verifyToken, usersController.deleteEntries);
+/* router.delete('/me/navigation-history', verifyToken, usersController.deleteAllEntries); */
 
 
 

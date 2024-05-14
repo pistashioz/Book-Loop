@@ -7,7 +7,7 @@ const { Op, ValidationError, where } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 
@@ -1481,8 +1481,22 @@ exports.listBlockedUsers = async (req, res) => {
 exports.createEntry = async (req, res) => {
     try {
         const { entityTypeId, elementId, searchTerm, visitDuration, actionType } = req.body;
+        const userId = req.userId;
+
+        // Avoid creating entry if user is viewing their own profile or listing
+        if (entityTypeId === 1 && elementId === userId) {
+            return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own profile.' });
+        }
+
+        if (entityTypeId === 2) {
+            const listing = await Listing.findByPk(elementId);
+            if (listing && listing.sellerUserId === userId) {
+                return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own listing.' });
+            }
+        }
+
         const newEntry = await NavigationHistory.create({
-            userId: req.userId,
+            userId,
             entityTypeId,
             elementId,
             searchTerm,
@@ -1490,7 +1504,8 @@ exports.createEntry = async (req, res) => {
             visitDuration,
             actionType
         });
-        res.status(201).json(newEntry);
+
+        res.status(201).send(); // No need to return the entry
     } catch (error) {
         console.error("Detailed error: ", error);
         if (error instanceof ValidationError) {
@@ -1502,6 +1517,7 @@ exports.createEntry = async (req, res) => {
         res.status(500).json({ message: "Error creating navigation history entry", error: error.message });
     }
 };
+
 
 // Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {
@@ -1530,7 +1546,8 @@ exports.getEntries = async (req, res) => {
                 details = await User.findOne({
                     where: { userId: entry.elementId },
                     attributes: [
-                        'username', 
+                        'userId',
+                        'username',
                         'profileImage',
                         [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
                         [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
@@ -1546,27 +1563,22 @@ exports.getEntries = async (req, res) => {
                 details = await Listing.findOne({
                     where: { listingId: entry.elementId },
                     attributes: [
-                        'listingTitle', 
-                        'price', 
-                        'listingCondition'
+                        'listingTitle',
+                        'price',
+                        'listingCondition',
+                        [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount']
                     ],
                     include: [
-                        {
-                            model: BookEdition,
-                            attributes: ['title']
-                        },
-                        {
-                            model: db.ListingImage,
-                            attributes: ['imageUrl'],
-                            limit: 1
-                        }
-                    ]
+                        { model: db.BookEdition, attributes: ['title'] },
+                        { model: db.ListingImage, attributes: ['imageUrl'], limit: 1 }
+                    ],
+                    group: ['Listing.listingId']
                 });
-            } else if (entry.entityTypeId === 3) { // Book
+            } else if (entry.entityTypeId === 3) { // Book Edition
                 details = await BookEdition.findOne({
                     where: { ISBN: entry.elementId },
                     attributes: [
-                        'title', 
+                        'title',
                         'coverImage',
                         [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("LiteraryReviews.literaryRating")), 1), 'averageRating'],
                         [db.sequelize.fn("COUNT", db.sequelize.col("LiteraryReviews.workId")), 'reviewsCount']
@@ -1580,16 +1592,18 @@ exports.getEntries = async (req, res) => {
             }
 
             return {
-                ...entry.toJSON(),
+                historyId: entry.historyId,
                 details
             };
         }));
 
         res.status(200).json(detailedEntries);
     } catch (error) {
+        console.error("Error fetching navigation history:", error);
         res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
     }
 };
+
 
 /* // Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {

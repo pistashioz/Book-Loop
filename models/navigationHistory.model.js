@@ -44,7 +44,7 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             validate: {
                 isInt: { msg: 'Visit duration must be an integer' },
-                min: { args: [1], msg: 'Visit duration must be at least 1 second' }
+                min: { args: [10], msg: 'Visit duration must be at least 10 seconds' }
             }
         },
         actionType: {
