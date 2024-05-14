@@ -10,7 +10,6 @@ const { Op, ValidationError, where } = require('sequelize');
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
-// Maximum entries for each type
 const MAX_ENTRIES_PER_TYPE = 3;
 const MAX_SEARCH_ENTRIES =2;
 
@@ -450,7 +449,7 @@ exports.login = async (req, res) => {
         }
         
         // Check if the account is deactivated or scheduled for deletion beyond grace period
-        if (!reactivate && (user.isActiveStatus === 'suspended' || 
+        if (!reactivate && (user.isActiveStatus === 'deactivated' || 
         (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
             return res.status(403).json({
                 message: "Account is deactivated or past the scheduled deletion date. Reactivation is not possible.",
@@ -504,7 +503,7 @@ exports.login = async (req, res) => {
         await t.commit();
         res.status(200).json({
             message: "Login successful",
-            user: { id: user.userId, username: user.username, email: user.email }
+            user: { id: user.userId, username: user.username, email: user.email, isAdmin: user.isAdmin }
         });
     } catch (error) {
         console.error("Error during login:", error);
@@ -622,7 +621,7 @@ exports.deactivateAccount = async (req, res) => {
 
         // Proceed to deactivate
         const result = await db.User.update({
-            isActiveStatus: 'suspended'
+            isActiveStatus: 'deactivated'
         }, {
             where: { userId: id }
         });

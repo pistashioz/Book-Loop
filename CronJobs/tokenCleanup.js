@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const db = require('./models'); // Correct path to your models
+const db = require('../models'); 
 const { Token, SessionLog } = db;
 const { Op } = require('sequelize');
 

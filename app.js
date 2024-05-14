@@ -31,22 +31,51 @@ app.use((req, res, next) => {
   }
 });
 
-// Import and initialize the cron job for token cleanup
-require('./tokenCleanup'); // Ensure path accuracy
+// Import and initialize the cron jobs
+require('./CronJobs/tokenCleanup'); 
+require('./CronJobs/suspensionCleanup'); 
 
 // Define a basic route to check the server status
 app.get('/', (req, res) => {
   res.status(200).send('Welcome to Book Loop API!');
 });
 
-// Import and use user routes from the users.routes.js file
-const userRoutes = require('./routes/users.routes'); // Ensure path accuracy
-app.use('/users', userRoutes); // Mount the user routes at '/users' endpoint
+// Import and use resource routes
+const userRoutes = require('./routes/users.routes'); 
+app.use('/users', userRoutes); 
 
-// Import and use wishlist routes from the wishlist.routes.js file
 const wishlistRoutes = require('./routes/wishlist.routes');
 app.use('/wishlist', wishlistRoutes);
 
+const adminRoutes = require('./routes/admin.routes');
+app.use('/admin', adminRoutes);
+
+const worksRoutes = require('./routes/works.routes');
+app.use('/works', worksRoutes);
+
+const bookInSeriesRoutes = require('./routes/bookInSeries.routes');
+app.use('/book-in-series', bookInSeriesRoutes);
+
+const bookEditionRoutes = require('./routes/bookEdition.routes');
+app.use('/book-in-series', bookInSeriesRoutes);
+
+const publisherRoutes = require('./routes/publisher.routes');
+app.use('/publishers', publisherRoutes);
+
+const bookAuthorRoutes = require('./routes/bookAuthor.routes');
+app.use('/authors', bookAuthorRoutes);
+
+const personRoutes = require('./routes/person.routes');
+app.use('/persons', personRoutes);
+
+const bookContributorRoutes = require('./routes/bookContributor.routes');
+app.use('/contributors', bookContributorRoutes);
+
+const genreRoutes = require('./routes/genre.routes');
+app.use('/genres', genreRoutes);
+
+const bookGenreRoutes = require('./routes/bookGenre.routes');
+app.use('/book-genres', bookGenreRoutes);
 
 // Catch-all for any unhandled routes, sending a 404 response
 app.all('*', (req, res) => {

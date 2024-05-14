@@ -52,7 +52,7 @@ module.exports = (sequelize, DataTypes) => {
         },
         registrationDate: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
         isActiveStatus: {
-            type: DataTypes.ENUM('active', 'suspended', 'banned', 'to be deleted'),
+            type: DataTypes.ENUM('active', 'suspended', 'deactivated', 'to be deleted'),
             defaultValue: 'active'
         },
         deletionScheduleDate: DataTypes.DATE,
