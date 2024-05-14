@@ -33,7 +33,7 @@ module.exports = (sequelize, DataTypes) => {
         validate: { notNull: { msg: 'Synopsis cannot be null or empty!' } }
     },
     editionType: {
-        type: DataTypes.ENUM('paperback', 'hardcover', 'audiobook', 'ebook'),
+        type: DataTypes.ENUM('Paperback', 'Hardcover', 'Audiobook', 'Ebook'),
         allowNull: false,
         validate: {
             isValidEditionType(value) {
