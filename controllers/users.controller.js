@@ -10,7 +10,9 @@ const { Op, ValidationError, where } = require('sequelize');
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
-
+// Maximum entries for each type
+const MAX_ENTRIES_PER_TYPE = 3;
+const MAX_SEARCH_ENTRIES =2;
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
@@ -1495,15 +1497,70 @@ exports.createEntry = async (req, res) => {
             }
         }
 
-        const newEntry = await NavigationHistory.create({
-            userId,
-            entityTypeId,
-            elementId,
-            searchTerm,
-            dateTime: new Date(),
-            visitDuration,
-            actionType
-        });
+        if (entityTypeId === 3) {
+            const bookEdition = await BookEdition.findByPk(elementId);
+            if (!bookEdition) {
+                return res.status(400).json({ message: 'Book edition does not exist.' });
+            }
+        }
+
+        // Check if an entry with the same entityTypeId and elementId already exists
+        let existingEntry;
+        if (entityTypeId) {
+            existingEntry = await NavigationHistory.findOne({
+                where: {
+                    userId,
+                    entityTypeId,
+                    elementId
+                }
+            });
+        } else {
+            existingEntry = await NavigationHistory.findOne({
+                where: {
+                    userId,
+                    searchTerm
+                }
+            });
+        }
+
+        if (existingEntry) {
+            // Update the existing entry's dateTime and visitDuration
+            existingEntry.dateTime = new Date();
+            existingEntry.visitDuration = visitDuration;
+            await existingEntry.save();
+        } else {
+            // Count existing entries
+            const count = await NavigationHistory.count({
+                where: {
+                    userId,
+                    entityTypeId: entityTypeId ? entityTypeId : { [Op.is]: null }
+                }
+            });
+
+            // Delete older entries if the limit is exceeded
+            if (count >= (entityTypeId ? MAX_ENTRIES_PER_TYPE : MAX_SEARCH_ENTRIES)) {
+                const oldestEntries = await NavigationHistory.findAll({
+                    where: {
+                        userId,
+                        entityTypeId: entityTypeId ? entityTypeId : { [Op.is]: null }
+                    },
+                    order: [['dateTime', 'ASC']],
+                    limit: 1
+                });
+                await NavigationHistory.destroy({ where: { historyId: oldestEntries.map(entry => entry.historyId) } });
+            }
+
+            // Create new entry
+            await NavigationHistory.create({
+                userId,
+                entityTypeId,
+                elementId,
+                searchTerm,
+                dateTime: new Date(),
+                visitDuration,
+                actionType
+            });
+        }
 
         res.status(201).send(); // No need to return the entry
     } catch (error) {
@@ -1535,7 +1592,8 @@ exports.getEntries = async (req, res) => {
 
         const entries = await NavigationHistory.findAll({
             where: whereClause,
-            include: [{ model: EntityType, attributes: ['entityTypeName'] }]
+            include: [{ model: EntityType, attributes: ['entityTypeName'] }],
+            order: [['dateTime', 'DESC']] 
         });
 
         // Retrieve additional details based on the entityType
@@ -1560,9 +1618,10 @@ exports.getEntries = async (req, res) => {
                     group: ['User.userId']
                 });
             } else if (entry.entityTypeId === 2) { // Listing
-                details = await Listing.findOne({
+                const listing = await Listing.findOne({
                     where: { listingId: entry.elementId },
                     attributes: [
+                        'listingId',
                         'listingTitle',
                         'price',
                         'listingCondition',
@@ -1574,19 +1633,39 @@ exports.getEntries = async (req, res) => {
                     ],
                     group: ['Listing.listingId']
                 });
+
+                if (listing) {
+                    details = {
+                        listingId: listing.listingId,
+                        listingTitle: listing.listingTitle,
+                        price: listing.price,
+                        listingCondition: listing.listingCondition,
+                        likesCount: listing.likesCount,
+                        listingImage: listing.ListingImages.length > 0 ? listing.ListingImages[0].imageUrl : null,
+                        BookEdition: listing.BookEdition
+                    };
+                }
             } else if (entry.entityTypeId === 3) { // Book Edition
                 details = await BookEdition.findOne({
                     where: { ISBN: entry.elementId },
                     attributes: [
                         'title',
                         'coverImage',
-                        [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("LiteraryReviews.literaryRating")), 1), 'averageRating'],
-                        [db.sequelize.fn("COUNT", db.sequelize.col("LiteraryReviews.workId")), 'reviewsCount']
                     ],
-                    include: [{
-                        model: db.LiteraryReview,
-                        attributes: []
-                    }],
+                    include: [
+                        {
+                            model: db.Work,
+                            attributes: [
+                                [db.sequelize.literal(`(SELECT COUNT(*) FROM literaryReview WHERE literaryReview.workId = Work.workId)`), 'literaryReviewsCount'],
+                                [db.sequelize.literal(`ROUND((SELECT AVG(literaryReview.literaryRating) FROM literaryReview WHERE literaryReview.workId = Work.workId), 2)`), 'averageLiteraryRating']
+                            ],
+                            include: [{
+                                model: db.LiteraryReview,
+                                attributes: []
+                            }],
+                            group: ['Work.workId']
+                        }
+                ],
                     group: ['BookEdition.ISBN']
                 });
             }
@@ -1605,30 +1684,7 @@ exports.getEntries = async (req, res) => {
 };
 
 
-/* // Get all navigation history entries for the user, optionally filtered by type
-exports.getEntries = async (req, res) => {
-    try {
-        const { type } = req.query;
-        let whereClause = { userId: req.userId };
 
-        if (type) {
-            const entityType = await EntityType.findOne({ where: { entityTypeName: type } });
-            if (!entityType) {
-                return res.status(404).json({ message: 'Entity type not found' });
-            }
-            whereClause.entityTypeId = entityType.entityTypeId;
-        }
-
-        const entries = await NavigationHistory.findAll({
-            where: whereClause,
-            include: [{ model: EntityType, attributes: ['entityTypeName'] }]
-        });
-        res.status(200).json(entries);
-    } catch (error) {
-        res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
-    }
-};
- */
 // Delete navigation history entries
 exports.deleteEntries = async (req, res) => {
     try {
