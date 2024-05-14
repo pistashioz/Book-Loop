@@ -7,7 +7,7 @@ const { Op, ValidationError, where } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 
@@ -1474,5 +1474,166 @@ exports.listBlockedUsers = async (req, res) => {
         res.status(200).json(blockedUsers);
     } catch (error) {
         res.status(500).json({ message: 'Error retrieving blocked users', error: error.message });
+    }
+};
+
+// Create a new navigation history entry
+exports.createEntry = async (req, res) => {
+    try {
+        const { entityTypeId, elementId, searchTerm, visitDuration, actionType } = req.body;
+        const newEntry = await NavigationHistory.create({
+            userId: req.userId,
+            entityTypeId,
+            elementId,
+            searchTerm,
+            dateTime: new Date(),
+            visitDuration,
+            actionType
+        });
+        res.status(201).json(newEntry);
+    } catch (error) {
+        console.error("Detailed error: ", error);
+        if (error instanceof ValidationError) {
+            return res.status(400).json({
+                message: "Validation error",
+                errors: error.errors.map(e => e.message)
+            });
+        }
+        res.status(500).json({ message: "Error creating navigation history entry", error: error.message });
+    }
+};
+
+// Get all navigation history entries for the user, optionally filtered by type
+exports.getEntries = async (req, res) => {
+    try {
+        const { type } = req.query;
+        let whereClause = { userId: req.userId };
+
+        if (type) {
+            const entityType = await EntityType.findOne({ where: { entityTypeName: type } });
+            if (!entityType) {
+                return res.status(404).json({ message: 'Entity type not found' });
+            }
+            whereClause.entityTypeId = entityType.entityTypeId;
+        }
+
+        const entries = await NavigationHistory.findAll({
+            where: whereClause,
+            include: [{ model: EntityType, attributes: ['entityTypeName'] }]
+        });
+
+        // Retrieve additional details based on the entityType
+        const detailedEntries = await Promise.all(entries.map(async (entry) => {
+            let details = null;
+
+            if (entry.entityTypeId === 1) { // User
+                details = await User.findOne({
+                    where: { userId: entry.elementId },
+                    attributes: [
+                        'username', 
+                        'profileImage',
+                        [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
+                        [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
+                    ],
+                    include: [{
+                        model: db.PurchaseReview,
+                        as: 'SellerReviews',
+                        attributes: []
+                    }],
+                    group: ['User.userId']
+                });
+            } else if (entry.entityTypeId === 2) { // Listing
+                details = await Listing.findOne({
+                    where: { listingId: entry.elementId },
+                    attributes: [
+                        'listingTitle', 
+                        'price', 
+                        'listingCondition'
+                    ],
+                    include: [
+                        {
+                            model: BookEdition,
+                            attributes: ['title']
+                        },
+                        {
+                            model: db.ListingImage,
+                            attributes: ['imageUrl'],
+                            limit: 1
+                        }
+                    ]
+                });
+            } else if (entry.entityTypeId === 3) { // Book
+                details = await BookEdition.findOne({
+                    where: { ISBN: entry.elementId },
+                    attributes: [
+                        'title', 
+                        'coverImage',
+                        [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("LiteraryReviews.literaryRating")), 1), 'averageRating'],
+                        [db.sequelize.fn("COUNT", db.sequelize.col("LiteraryReviews.workId")), 'reviewsCount']
+                    ],
+                    include: [{
+                        model: db.LiteraryReview,
+                        attributes: []
+                    }],
+                    group: ['BookEdition.ISBN']
+                });
+            }
+
+            return {
+                ...entry.toJSON(),
+                details
+            };
+        }));
+
+        res.status(200).json(detailedEntries);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
+    }
+};
+
+/* // Get all navigation history entries for the user, optionally filtered by type
+exports.getEntries = async (req, res) => {
+    try {
+        const { type } = req.query;
+        let whereClause = { userId: req.userId };
+
+        if (type) {
+            const entityType = await EntityType.findOne({ where: { entityTypeName: type } });
+            if (!entityType) {
+                return res.status(404).json({ message: 'Entity type not found' });
+            }
+            whereClause.entityTypeId = entityType.entityTypeId;
+        }
+
+        const entries = await NavigationHistory.findAll({
+            where: whereClause,
+            include: [{ model: EntityType, attributes: ['entityTypeName'] }]
+        });
+        res.status(200).json(entries);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
+    }
+};
+ */
+// Delete navigation history entries
+exports.deleteEntries = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (id) {
+            // Delete a specific entry
+            const deleted = await NavigationHistory.destroy({ where: { historyId: id, userId: req.userId } });
+            if (deleted) {
+                return res.status(200).json({ message: 'Navigation history entry deleted successfully' });
+            } else {
+                return res.status(404).json({ message: 'Navigation history entry not found' });
+            }
+        } else {
+            // Delete all entries
+            await NavigationHistory.destroy({ where: { userId: req.userId } });
+            return res.status(200).json({ message: 'All navigation history entries deleted successfully' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting navigation history entries', error: error.message });
     }
 };

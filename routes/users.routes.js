@@ -45,6 +45,16 @@ router.delete('/me/blocked/:blockedUserId', verifyToken, usersController.unblock
 // Get list of blocked users
 router.get('/me/blocked', verifyToken, usersController.listBlockedUsers);
 
+// Navigation history routes
+router.route('/me/navigation-history')
+    .post('/me/navigation-history', verifyToken, navigationHistoryController.createEntry)
+    .get('/me/navigation-history', verifyToken, navigationHistoryController.getEntries);
+
+router.delete('/me/navigation-history/:id?', verifyToken, navigationHistoryController.deleteEntry);
+router.delete('/me/navigation-history', verifyToken, navigationHistoryController.deleteAllEntries);
+
+
+
 // General user routes
 router.route('/')
     .get(usersController.findAll)

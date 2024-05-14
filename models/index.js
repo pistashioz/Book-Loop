@@ -52,6 +52,8 @@ db.LiteraryReview = require('./literaryReview.model.js')(sequelize, DataTypes);
 db.LikeReview = require('./likeReview.model.js')(sequelize, DataTypes);
 db.CommentReview = require('./commentReview.model.js')(sequelize, DataTypes);
 db.LikeComment = require('./likeComment.model.js')(sequelize, DataTypes);
+db.EntityType = require('./entityType.model.js')(sequelize, DataTypes);
+db.NavigationHistory = require('./navigationHistory.model.js')(sequelize, DataTypes);
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -138,6 +140,12 @@ db.LikeComment.belongsTo(db.CommentReview, { foreignKey: 'commentId', as: 'Comme
 
 db.User.hasMany(db.LikeComment, { foreignKey: 'userId', onDelete: 'CASCADE' });
 db.LikeComment.belongsTo(db.User, { foreignKey: 'userId' });
+
+db.User.hasMany(db.NavigationHistory, { foreignKey: 'userId', onDelete: 'CASCADE' });
+db.NavigationHistory.belongsTo(db.User, { foreignKey: 'userId' });
+
+db.EntityType.hasMany(db.NavigationHistory, { foreignKey: 'entityTypeId', onDelete: 'CASCADE' });
+db.NavigationHistory.belongsTo(db.EntityType, { foreignKey: 'entityTypeId' });
 
 
 module.exports = db;
