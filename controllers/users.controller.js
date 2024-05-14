@@ -1485,19 +1485,24 @@ exports.createEntry = async (req, res) => {
         const { entityTypeId, elementId, searchTerm, visitDuration, actionType } = req.body;
         const userId = req.userId;
 
-        // Avoid creating entry if user is viewing their own profile or listing
-        if (entityTypeId === 1 && elementId === userId) {
-            return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own profile.' });
-        }
-
-        if (entityTypeId === 2) {
+        // Validate entityTypeId and elementId
+        if (entityTypeId === 1) {
+            const user = await User.findByPk(elementId);
+            if (!user) {
+                return res.status(400).json({ message: 'User does not exist.' });
+            }
+            if (elementId === userId) {
+                return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own profile.' });
+            }
+        } else if (entityTypeId === 2) {
             const listing = await Listing.findByPk(elementId);
-            if (listing && listing.sellerUserId === userId) {
+            if (!listing) {
+                return res.status(400).json({ message: 'Listing does not exist.' });
+            }
+            if (listing.sellerUserId === userId) {
                 return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own listing.' });
             }
-        }
-
-        if (entityTypeId === 3) {
+        } else if (entityTypeId === 3) {
             const bookEdition = await BookEdition.findByPk(elementId);
             if (!bookEdition) {
                 return res.status(400).json({ message: 'Book edition does not exist.' });
@@ -1581,26 +1586,40 @@ exports.getEntries = async (req, res) => {
     try {
         const { type } = req.query;
         let whereClause = { userId: req.userId };
-
+        
         if (type) {
-            const entityType = await EntityType.findOne({ where: { entityTypeName: type } });
-            if (!entityType) {
-                return res.status(404).json({ message: 'Entity type not found' });
+            if (type === 'search') {
+                // Fetch search term entries
+                whereClause.entityTypeId = { [Op.is]: null };
+                whereClause.searchTerm = { [Op.not]: null };
+            } else {
+                const entityType = await EntityType.findOne({ where: { entityTypeName: type } });
+                if (!entityType) {
+                    return res.status(404).json({ message: 'Entity type not found' });
+                }
+                whereClause.entityTypeId = entityType.entityTypeId;
             }
-            whereClause.entityTypeId = entityType.entityTypeId;
+        } else if (type === 'listing' || !type) {
+            // Default to listings
+            const entityType = await EntityType.findOne({ where: { entityTypeName: 'listing' } });
+            if (!entityType) {
+                return res.status(404).json({ message: 'Default entity type (listing) not found' });
+            }
+            whereClause.entityTypeId = entityType.entityTypeId;     
         }
-
+        
         const entries = await NavigationHistory.findAll({
             where: whereClause,
             include: [{ model: EntityType, attributes: ['entityTypeName'] }],
-            order: [['dateTime', 'DESC']] 
+            order: [['dateTime', 'DESC']]
         });
-
+        console.log(entries);
         // Retrieve additional details based on the entityType
         const detailedEntries = await Promise.all(entries.map(async (entry) => {
             let details = null;
-
+            
             if (entry.entityTypeId === 1) { // User
+                console.log(typeof entry.elementId);
                 details = await User.findOne({
                     where: { userId: entry.elementId },
                     attributes: [
@@ -1618,6 +1637,8 @@ exports.getEntries = async (req, res) => {
                     group: ['User.userId']
                 });
             } else if (entry.entityTypeId === 2) { // Listing
+                console.log(`Looking up listing ${entry.elementId}`);
+                console.log(typeof entry.elementId);
                 const listing = await Listing.findOne({
                     where: { listingId: entry.elementId },
                     attributes: [
@@ -1633,7 +1654,7 @@ exports.getEntries = async (req, res) => {
                     ],
                     group: ['Listing.listingId']
                 });
-
+                console.log(listing);
                 if (listing) {
                     details = {
                         listingId: listing.listingId,
@@ -1665,17 +1686,21 @@ exports.getEntries = async (req, res) => {
                             }],
                             group: ['Work.workId']
                         }
-                ],
+                    ],
                     group: ['BookEdition.ISBN']
                 });
+            } else if (entry.actionType === 'search') { // Search Term
+                details = {
+                    searchTerm: entry.searchTerm
+                };
             }
-
+            
             return {
                 historyId: entry.historyId,
                 details
             };
         }));
-
+        
         res.status(200).json(detailedEntries);
     } catch (error) {
         console.error("Error fetching navigation history:", error);
