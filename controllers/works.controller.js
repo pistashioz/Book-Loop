@@ -4,43 +4,162 @@ const {
     Person,
     BookEdition,
     LiteraryReview,
-    LiteraryComments,
+    CommentReview,
     User,
     LikeReview,
     LikeComment
 } = db;
-const { ValidationError, Op } = require('sequelize');
+const { ValidationError, Op, where } = require('sequelize');
 
-// Fetch all works
+/**
+ * Fetch all works with pagination and average rating.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} req.query - Query parameters from the request
+ * @param {number} req.query.page - Page number for pagination (default is 1)
+ * @param {number} req.query.limit - Number of items per page for pagination (default is 10)
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status, message, works data, and pagination info
+ */
 exports.findAll = async (req, res) => {
     try {
-        const works = await Work.findAll({ raw: true });
-        works.forEach(work => {
-            work.links = [
+        // Extract pagination parameters from query, with defaults
+        const { page = 1, limit = 10 } = req.query; // Default to page 1, 10 items per page
+        const offset = (page - 1) * limit;
+
+        // Get the total count of works in the database
+        const totalWorks = await Work.count();
+
+        // Fetch paginated results with associated data
+        const { count, rows } = await Work.findAndCountAll({
+            attributes: [
+                'workId',
+                'originalTitle',
+                'firstPublishedDate',
+                'seriesId',
+                'seriesOrder',
+                // Calculate average literary rating
+                [db.sequelize.literal(`ROUND((SELECT AVG(literaryReview.literaryRating) FROM literaryReview WHERE literaryReview.workId = Work.workId), 2)`), 'averageLiteraryRating']
+            ],
+            include: [
+                {
+                    model: db.LiteraryReview,
+                    attributes: [], // Exclude LiteraryReview attributes from the main result
+                },
+                {
+                    model: db.BookInSeries,
+                    as: 'BookInSeries', // Use alias defined in the model association
+                    attributes: ['seriesName'],
+                    required: false // Left join
+                }
+            ],
+            group: ['Work.workId'], 
+            order: [['firstPublishedDate', 'DESC']], 
+            limit, // Limit results to the specified page size
+            offset // Offset results for pagination
+        });
+
+        // Handle case where no works are found
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: "No works found" });
+        }
+
+        // Map works to the desired response format
+        const works = rows.map(work => ({
+            workId: work.workId,
+            originalTitle: work.originalTitle,
+            firstPublishedDate: work.firstPublishedDate,
+            averageRating: work.dataValues.averageLiteraryRating || 0,
+            Series: {
+                seriesId: work.seriesId,
+                seriesOrder: work.seriesOrder,
+                seriesName: work.BookInSeries ? work.BookInSeries.seriesName : 'Not part of a series'
+            },
+            links: [
                 { rel: "self", href: `/works/${work.workId}`, method: "GET" },
                 { rel: "delete", href: `/works/${work.workId}`, method: "DELETE" },
-                { rel: "modify", href: `/works/${work.workId}`, method: "PUT" },
-            ];
-        });
+                { rel: "modify", href: `/works/${work.workId}`, method: "PATCH" },
+            ]
+        }));
+
+        // Calculate total number of pages
+        const totalPages = Math.ceil(totalWorks / limit);
+
+        // Send the response with works data and pagination info
         return res.status(200).json({
             success: true,
-            data: works,
+            message: `Found ${rows.length} works`,
+            totalWorks: totalWorks,
+            totalPages,
+            currentPage: parseInt(page, 10),
+            works,
             links: [{ rel: "add-work", href: `/work`, method: "POST" }]
         });
     } catch (error) {
+        // Log error and send response with error message
         console.error("Error fetching works:", error);
-        return res.status(400).json({ message: error.message || "Some error occurred" });
+        return res.status(500).json({ success: false, message: error.message || "Some error occurred" });
     }
 };
 
-// Create a new work
+
+
+/**
+ * Create a new work along with an optional initial book edition.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.create = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
-        const { originalTitle, firstPublishedDate, averageLiteraryRating, seriesId, seriesOrder } = req.body;
-        const newWork = await Work.create({ originalTitle, firstPublishedDate, averageLiteraryRating, seriesId, seriesOrder });
+        const { originalTitle, firstPublishedDate, seriesId = null, seriesOrder = null, authors = [], genres = [], edition = null } = req.body;
+
+        // Check for duplicate work
+        const existingWork = await Work.findOne({
+            where: { originalTitle, firstPublishedDate },
+            include: [{
+                model: db.BookAuthor,
+                include: [{
+                    model: db.Person,
+                    where: { personName: authors }
+                }]
+            }]
+        });
+
+        if (existingWork) {
+            return res.status(400).json({ success: false, message: 'Work already exists with the same title and publication date by the same author.' });
+        }
+
+        // Create new work
+        const newWork = await Work.create({ originalTitle, firstPublishedDate, seriesId, seriesOrder }, { transaction: t });
+
+        // Associate authors
+        for (const authorName of authors) {
+            const author = await findOrCreateAuthor(authorName, t);
+            await db.BookAuthor.create({ workId: newWork.workId, personId: author.personId }, { transaction: t });
+        }
+
+        // Associate genres
+        for (const genreName of genres) {
+            const genre = await findOrCreateGenre(genreName, t);
+            await db.BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
+        }
+
+        // Create initial book edition if provided
+        if (edition) {
+            const { ISBN, publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = edition;
+            await db.BookEdition.create({
+                ISBN, workId: newWork.workId, publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
+            }, { transaction: t });
+        }
+
+        await t.commit();
+
         res.status(201).json({
             success: true,
-            message: 'New work created successfully',
+            message: 'New work and its initial book edition created successfully',
             work: newWork,
             links: [
                 { rel: "self", href: `/works/${newWork.workId}`, method: "GET" },
@@ -49,14 +168,76 @@ exports.create = async (req, res) => {
             ]
         });
     } catch (err) {
-        console.error("Error creating work:", err);
+        await t.rollback();
+        console.error("Error creating work and its edition:", err);
         if (err instanceof ValidationError) {
-            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {
-            res.status(500).json({ success: false, msg: err.message || "Some error occurred while creating the work." });
+            res.status(500).json({ success: false, message: err.message || "Some error occurred while creating the work." });
         }
     }
 };
+
+/**
+ * Helper function to find or create an author.
+ * 
+ * @param {string} authorName - Name of the author
+ * @param {Object} transaction - Sequelize transaction object
+ * @returns {Promise<Object>} Author instance
+ */
+async function findOrCreateAuthor(authorName, transaction) {
+    let author = await db.Person.findOne({ where: { personName: authorName }, transaction });
+    if (!author) {
+        author = await db.Person.create({ personName: authorName, roles: 'author' }, { transaction });
+    }
+    return author;
+}
+
+/**
+ * Helper function to find or create a genre.
+ * 
+ * @param {string} genreName - Name of the genre
+ * @param {Object} transaction - Sequelize transaction object
+ * @returns {Promise<Object>} Genre instance
+ */
+async function findOrCreateGenre(genreName, transaction) {
+    let genre = await db.Genre.findOne({ where: { genreName: genreName }, transaction });
+    if (!genre) {
+        genre = await db.Genre.create({ genreName: genreName }, { transaction });
+    }
+    return genre;
+}
+
+/**
+ * Helper function to find or create an author.
+ * 
+ * @param {string} authorName - Name of the author
+ * @param {Object} transaction - Sequelize transaction object
+ * @returns {Promise<Object>} Author instance
+ */
+async function findOrCreateAuthor(authorName, transaction) {
+    let author = await db.Person.findOne({ where: { personName: authorName }, transaction });
+    if (!author) {
+        author = await db.Person.create({ personName: authorName, roles: 'author' }, { transaction });
+    }
+    return author;
+}
+
+/**
+ * Helper function to find or create a genre.
+ * 
+ * @param {string} genreName - Name of the genre
+ * @param {Object} transaction - Sequelize transaction object
+ * @returns {Promise<Object>} Genre instance
+ */
+async function findOrCreateGenre(genreName, transaction) {
+    let genre = await db.Genre.findOne({ where: { genreName: genreName }, transaction });
+    if (!genre) {
+        genre = await db.Genre.create({ genreName: genreName }, { transaction });
+    }
+    return genre;
+}
+
 
 // Find a specific work by ID
 exports.findWork = async (req, res) => {
@@ -510,25 +691,66 @@ exports.removeLikeReview = async (req, res) => {
 // Get comments for a specific review by work ID and review ID
 exports.getReviewsComments = async (req, res) => {
     try {
-        const comments = await LiteraryComments.findAll({
-            where: { literaryReviewId: { [Op.eq]: req.params.literaryReviewId } },
-            raw: true
+        const { workId, literaryReviewId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+
+        const comments = await CommentReview.findAll({
+            where: { literaryReviewId },
+            attributes: [
+                'commentId', 
+                'literaryReviewId', 
+                'comment', 
+                'creationDate',
+                [db.sequelize.literal('(SELECT COUNT(*) FROM likeComment WHERE likeComment.commentId = CommentReview.commentId)'), 'likeCount']
+            ],
+            include: [
+                {
+                    model: db.User,
+                    as: 'Commenter',
+                    attributes: ['userId', 'username']
+                }
+            ],
+            order: [['creationDate', 'DESC']],
+            offset,
+            limit,
         });
-        comments.forEach(comment => {
-            comment.links = [
-                { rel: "self", href: `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, method: "GET" },
-                { rel: "delete", href: `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, method: "DELETE" },
-                { rel: "modify", href: `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments/${comment.commentId}`, method: "PUT" },
-            ];
-        });
+
+        if (comments.length === 0) {
+            return res.status(404).json({ success: false, message: "No comments found for this review" });
+        }
+
+        const formattedComments = comments.map(comment => ({
+            commentId: comment.commentId,
+            literaryReviewId: comment.literaryReviewId,
+            comment: comment.comment,
+            createdAt: comment.creationDate,
+            likeCount: comment.dataValues.likeCount || 0,
+            User: {
+                userId: comment.Commenter.userId,
+                username: comment.Commenter.username
+            },
+            links: [
+                { rel: "delete", href: `/works/${workId}/reviews/${literaryReviewId}/comments/${comment.commentId}`, method: "DELETE" },
+                { rel: "modify", href: `/works/${workId}/reviews/${literaryReviewId}/comments/${comment.commentId}`, method: "PATCH" }
+            ]
+        }));
+
+        const totalComments = await CommentReview.count({ where: { literaryReviewId } });
+        const totalPages = Math.ceil(totalComments / limit);
+
         res.status(200).json({
             success: true,
-            data: comments,
-            links: [{ rel: "add-comment-review", href: `/works/${req.params.workId}/reviews/${req.params.literaryReviewId}/comments`, method: "POST" }]
+            message: `Found ${comments.length} comments`,
+            totalComments,
+            totalPages,
+            currentPage: parseInt(page, 10),
+            comments: formattedComments,
+            links: [{ rel: "add-comment-review", href: `/works/${workId}/reviews/${literaryReviewId}/comments`, method: "POST" }]
         });
     } catch (err) {
         console.error("Error fetching comments:", err);
-        res.status(500).json({ success: false, msg: err.message || "Some error occurred while retrieving the comments." });
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the comments." });
     }
 };
 
@@ -541,7 +763,7 @@ exports.addCommentToReview = async (req, res) => {
             return res.status(404).json({ success: false, msg: `No work or review found with the provided IDs` });
         }
         const { userId, comment } = req.body;
-        const newComment = await LiteraryComments.create({
+        const newComment = await CommentReview.create({
             workId: req.params.workId,
             literaryReviewId: req.params.literaryReviewId,
             userId,
@@ -561,7 +783,7 @@ exports.addCommentToReview = async (req, res) => {
 // Edit a comment for a specific review by comment ID
 exports.editCommentOfReview = async (req, res) => {
     try {
-        const affectedRows = await LiteraryComments.update(req.body, { where: { commentId: req.params.commentId } });
+        const affectedRows = await CommentReview.update(req.body, { where: { commentId: req.params.commentId } });
         if (affectedRows[0] === 0) {
             return res.status(200).json({ success: true, msg: `No updates were made on comment with ID ${req.params.commentId}.` });
         }
@@ -579,7 +801,7 @@ exports.editCommentOfReview = async (req, res) => {
 // Remove a comment from a specific review by comment ID
 exports.removeCommentFromReview = async (req, res) => {
     try {
-        const result = await LiteraryComments.destroy({ where: { commentId: req.params.commentId } });
+        const result = await CommentReview.destroy({ where: { commentId: req.params.commentId } });
         if (result === 1) {
             return res.status(200).json({ success: true, msg: `Comment with ID ${req.params.commentId} was successfully deleted!` });
         }
@@ -595,7 +817,7 @@ exports.likeComment = async (req, res) => {
     try {
         const commentId = req.params.commentId;
         const userId = req.userId;
-        const comment = await LiteraryComments.findByPk(commentId);
+        const comment = await CommentReview.findByPk(commentId);
         if (!comment) {
             return res.status(404).json({ success: false, msg: 'Comment not found.' });
         }

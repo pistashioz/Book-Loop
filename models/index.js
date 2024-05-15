@@ -101,7 +101,7 @@ db.User.hasMany(db.PurchaseReview, { as: 'SellerReviews', foreignKey: 'sellerUse
 db.PurchaseReview.belongsTo(db.User, { as: 'Seller', foreignKey: 'sellerUserId' });
 
 db.BookInSeries.hasMany(db.Work, { foreignKey: 'seriesId', onDelete: 'CASCADE' });
-db.Work.belongsTo(db.BookInSeries, { foreignKey: 'seriesId' });
+db.Work.belongsTo(db.BookInSeries, { foreignKey: 'seriesId', as: 'BookInSeries'});
 
 db.Publisher.hasMany(db.BookEdition, { foreignKey: 'publisherId', onDelete: 'RESTRICT' });
 db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });

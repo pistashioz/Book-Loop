@@ -15,7 +15,7 @@ router.use((req, res, next) => {
 });
 
 router.route('/')
-    .get(bookEditionController.findAll)
+    .get(bookEditionController.findAll) ///// ???????????????''
     .post(verifyToken, isAdmin, bookEditionController.create);
 
 // Handle unsupported routes
