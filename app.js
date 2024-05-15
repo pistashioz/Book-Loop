@@ -57,7 +57,7 @@ const bookInSeriesRoutes = require('./routes/bookInSeries.routes');
 app.use('/book-in-series', bookInSeriesRoutes);
 
 const bookEditionRoutes = require('./routes/bookEdition.routes');
-app.use('/book-in-series', bookInSeriesRoutes);
+app.use('/book', bookEditionRoutes);
 
 const publisherRoutes = require('./routes/publisher.routes');
 app.use('/publishers', publisherRoutes);

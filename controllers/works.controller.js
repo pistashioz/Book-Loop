@@ -118,23 +118,75 @@ exports.removeWorkById = async (req, res) => {
     }
 };
 
-// Get editions of a specific work by ID
+// Get editions of a specific work by ID with pagination
 exports.getEditions = async (req, res) => {
     try {
         const { workId } = req.params;
+        const { all, page = 1, limit = all ? 10 : 5 } = req.query; 
+        const offset = (page - 1) * limit;
+
         if (!workId) {
             return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
         }
-        const foundEditions = await BookEdition.findAll({ where: { workId: { [Op.eq]: workId } } });
+
+        const { count, rows: foundEditions } = await BookEdition.findAndCountAll({
+            where: { workId: { [Op.eq]: workId } },
+            attributes: all? ['ISBN', 'title', 'publisherId', 'publicationDate', 'coverImage', 'editionType', 'pageNumber', 'language'] : ['ISBN', 'title', 'publisherId', 'publicationDate', 'coverImage', 'editionType'],
+            include: [
+                {
+                    model: db.Publisher,
+                    attributes: ['publisherId', 'publisherName']
+                },
+                {
+                    model: db.Work,
+                    attributes: all ? ['workId','firstPublishedDate'] : ['workId'],
+                    where: { workId }
+                }
+            ],
+            limit,
+            require: false,
+            offset
+        });
+
         if (foundEditions.length === 0) {
             return res.status(404).json({ success: false, message: "No book editions found for this work" });
         }
-        return res.status(200).json({ success: true, editions: foundEditions });
+
+        const editions = foundEditions.map(edition => ({
+            ISBN: edition.ISBN,
+            title: edition.title,
+            editionType: edition.editionType,
+            publisherId: edition.publisherId,
+            publisherName: edition.Publisher.publisherName,
+            publicationDate: edition.publicationDate,
+            coverImage: edition.coverImage,
+            pageNumber: edition.pageNumber,
+            language: edition.language,
+            Work: edition.Work
+            // firstPublishedDate: edition.Work ? edition.Work.firstPublishedDate : null
+        }));
+
+        const totalPages = Math.ceil(count / limit);
+
+        return res.status(200).json({
+            success: true,
+            message: `Found ${foundEditions.length} book editions`,
+            // editionsCount: foundEditions.length,
+            totalEditions: count,
+            totalPages,
+            currentPage: parseInt(page, 10),
+            editions
+        });
     } catch (err) {
         console.error("Error fetching editions:", err);
-        return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving book editions" });
+        return res.status(500).json({
+            success: false,
+            message: err.message || "Some error occurred while retrieving book editions"
+        });
     }
 };
+
+
 
 // Add a new edition to a specific work by ID
 exports.addEdition = async (req, res) => {
@@ -171,18 +223,55 @@ exports.addEdition = async (req, res) => {
 exports.getBookEdition = async (req, res) => {
     try {
         const { workId, bookEditionId } = req.params;
-        const bookEdition = await BookEdition.findOne({
-            where: { workId: { [Op.eq]: workId }, ISBN: bookEditionId }
-        });
-        if (!bookEdition) {
-            return res.status(404).json({ success: false, message: "Book not found" });
+
+        if (!workId || !bookEditionId) {
+            return res.status(400).json({ success: false, message: "workId and bookEditionId are required in the query parameters" });
         }
-        return res.status(200).json(bookEdition);
+
+        const bookEdition = await BookEdition.findOne({
+            where: { workId, ISBN: bookEditionId },
+            attributes: ['ISBN', 'title', 'publicationDate', 'synopsis', 'editionType', 'language', 'pageNumber', 'coverImage'],
+            include: [
+                {
+                    model: db.Publisher,
+                    attributes: ['publisherId', 'publisherName']
+                },
+                {
+                    model: db.Work,
+                    attributes: ['workId','firstPublishedDate']
+                }
+            ]
+        });
+
+        if (!bookEdition) {
+            return res.status(404).json({ success: false, message: "Book edition not found" });
+        }
+
+        return res.status(200).json({
+            success: true,
+            bookEdition: {
+                ISBN: bookEdition.ISBN,
+                title: bookEdition.title,
+                publicationDate: bookEdition.publicationDate,
+                synopsis: bookEdition.synopsis,
+                editionType: bookEdition.editionType,
+                language: bookEdition.language,
+                pageNumber: bookEdition.pageNumber,
+                coverImage: bookEdition.coverImage,
+                publisherId: bookEdition.Publisher.publisherId,
+                publisherName: bookEdition.Publisher.publisherName,
+                Work: bookEdition.Work
+            }
+        });
     } catch (err) {
         console.error("Error fetching book edition:", err);
-        return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the book edition" });
+        return res.status(500).json({
+            success: false,
+            message: err.message || "Some error occurred while retrieving the book edition"
+        });
     }
 };
+
 
 // Update a specific book edition by work ID and book edition ID (ISBN)
 exports.updateBookEdition = async (req, res) => {
@@ -226,27 +315,81 @@ exports.removeBookEdition = async (req, res) => {
 // Get reviews for a specific work by ID
 exports.getReviews = async (req, res) => {
     try {
+        const { workId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+
+        if (!workId) {
+            return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
+        }
+
         const reviews = await LiteraryReview.findAll({
-            where: { workId: { [Op.eq]: req.params.workId } },
-            raw: true
+            where: { workId },
+            attributes: [
+                'literaryReviewId',
+                'literaryReview',
+                'creationDate',
+                [db.sequelize.literal('(SELECT COUNT(*) FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId)'), 'likeCount'],
+                [db.sequelize.literal('(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)'), 'commentCount']
+            ],
+            include: [
+                {
+                    model: db.User,
+                    attributes: [
+                        'userId',
+                        'username',
+                        'profileImage',
+                        [db.sequelize.literal('(SELECT COUNT(*) FROM literaryReview WHERE literaryReview.userId = User.userId)'), 'reviewCount'],
+                        [db.sequelize.literal('(SELECT COUNT(*) FROM followRelationship WHERE followRelationship.followedUserId = User.userId)'), 'followersCount']
+                    ]
+                }
+            ],
+            limit,
+            offset
         });
-        reviews.forEach(review => {
-            review.links = [
+
+        if (reviews.length === 0) {
+            return res.status(404).json({ success: false, message: "No reviews found for this work" });
+        }
+        
+        const formattedReviews = reviews.map(review => ({
+            literaryReviewId: review.literaryReviewId,
+            reviewContent: review.literaryReview.substring(0, review.literaryReview.length / 3), // Preview content
+            createdAt: review.creationDate,
+            user: {
+                userId: review.User.userId,
+                username: review.User.username,
+                profileImageUrl: review.User.profileImage,
+                reviewCount: review.dataValues.User.dataValues.reviewCount || 0,
+                followersCount: review.dataValues.User.dataValues.followersCount || 0
+            },
+            likeCount: review.dataValues.likeCount || 0,
+            commentCount: review.dataValues.commentCount || 0,
+            links: [
                 { rel: "self", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "GET" },
                 { rel: "delete", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "DELETE" },
-                { rel: "modify", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "PUT" },
-            ];
-        });
-        res.status(200).json({
+                { rel: "modify", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "PATCH" }
+            ]
+        }));
+
+        const totalReviews = await LiteraryReview.count({ where: { workId } });
+        const totalPages = Math.ceil(totalReviews / limit);
+
+        return res.status(200).json({
             success: true,
-            data: reviews,
-            links: [{ rel: "add-literary-review", href: `/works/${req.params.workId}/reviews/`, method: "POST" }]
+            message: `Found ${reviews.length} reviews`,
+            totalReviews,
+            totalPages,
+            currentPage: parseInt(page, 10),
+            reviews: formattedReviews,
+            links: [{ rel: "add-literary-review", href: `/works/${workId}/reviews/`, method: "POST" }]
         });
     } catch (err) {
         console.error("Error fetching reviews:", err);
-        res.status(500).json({ success: false, msg: err.message || "Some error occurred while retrieving the reviews." });
+        return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the reviews." });
     }
 };
+
 
 // Add a review to a specific work by ID
 exports.addReview = async (req, res) => {

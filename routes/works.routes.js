@@ -27,7 +27,7 @@ router.route('/:workId')
 
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
-    .get(verifyToken, isAdmin, workController.getEditions)
+    .get(verifyToken, workController.getEditions)
     .post(verifyToken, isAdmin, workController.addEdition);
 
 router.route('/:workId/editions/:bookEditionId')
