@@ -12,6 +12,8 @@ router.use((req, res, next) => {
     next();
 });
 
+///////////////////// PRECISA DE REVISÃO /////////////////////
+
 router.route('/')
     .get(contributorController.findAllContributors);
 

@@ -7,7 +7,7 @@ const { Op, ValidationError, where } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 const MAX_ENTRIES_PER_TYPE = 3;
@@ -1739,5 +1739,144 @@ exports.deleteEntries = async (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ message: 'Error deleting navigation history entries', error: error.message });
+    }
+};
+
+// Get user's favorite genres
+exports.getFavoriteGenres = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const favoriteGenres = await UserFavoriteGenre.findAll({
+            where: { userId },
+            include: [{ model: Genre, attributes: ['genreId', 'genreName'] }]
+        });
+        res.status(200).json(favoriteGenres);
+    } catch (error) {
+        console.error("Error fetching favorite genres:", error);
+        res.status(500).json({ message: 'Error fetching favorite genres', error: error.message });
+    }
+};
+
+
+// Add a favorite genre
+exports.addFavoriteGenre = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const { genreName } = req.body;
+
+        // Check if the genre exists
+        const genre = await Genre.findOne({ where: { genreName } });
+        if (!genre) {
+            return res.status(404).json({ message: 'Genre not found' });
+        }
+
+        // Check if the user already has 5 favorite genres
+        const favoriteCount = await UserFavoriteGenre.count({ where: { userId } });
+        if (favoriteCount >= 5) {
+            return res.status(400).json({ message: 'You can only have up to 5 favorite genres' });
+        }
+
+        // Check if the genre is already a favorite
+        const existingFavorite = await UserFavoriteGenre.findOne({ where: { userId, genreId: genre.genreId } });
+        if (existingFavorite) {
+            return res.status(400).json({ message: 'Genre is already a favorite' });
+        }
+
+        const favoriteGenre = await UserFavoriteGenre.create({ userId, genreId: genre.genreId });
+        res.status(201).json({ message: `Genre '${genreName}' added to favorites` });
+    } catch (error) {
+        console.error("Error adding favorite genre:", error);
+        res.status(500).json({ message: 'Error adding favorite genre', error: error.message });
+    }
+};
+
+// Remove a favorite genre
+exports.removeFavoriteGenre = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const { genreId } = req.params;
+
+        const favoriteGenre = await UserFavoriteGenre.destroy({
+            where: { userId, genreId }
+        });
+
+        if (!favoriteGenre) {
+            return res.status(404).json({ message: 'Favorite genre not found' });
+        }
+
+        res.status(200).json({ message: 'Favorite genre removed successfully' });
+    } catch (error) {
+        console.error("Error removing favorite genre:", error);
+        res.status(500).json({ message: 'Error removing favorite genre', error: error.message });
+    }
+};
+
+
+// Get user's favorite authors
+exports.getFavoriteAuthors = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const favoriteAuthors = await UserFavoriteAuthor.findAll({
+            where: { userId },
+            include: [{ model: Person, attributes: ['personId', 'personName'] }]
+        });
+        res.status(200).json(favoriteAuthors);
+    } catch (error) {
+        console.error("Error fetching favorite authors:", error);
+        res.status(500).json({ message: 'Error fetching favorite authors', error: error.message });
+    }
+};
+
+// Add a favorite author
+exports.addFavoriteAuthor = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const { personName } = req.body;
+
+        // Check if the person exists and is an author
+        const person = await Person.findOne({ where: { personName, roles: { [Op.like]: '%author%' } } });
+        if (!person) {
+            return res.status(404).json({ message: 'Author not found' });
+        }
+
+        // Check if the user already has 5 favorite authors
+        const favoriteCount = await UserFavoriteAuthor.count({ where: { userId } });
+        if (favoriteCount >= 5) {
+            return res.status(400).json({ message: 'You can only have up to 5 favorite authors' });
+        }
+
+        // Check if the author is already a favorite
+        const existingFavorite = await UserFavoriteAuthor.findOne({ where: { userId, personId: person.personId } });
+        if (existingFavorite) {
+            return res.status(400).json({ message: 'Author is already a favorite' });
+        }
+
+        const favoriteAuthor = await UserFavoriteAuthor.create({ userId, personId: person.personId });
+        res.status(201).json({ message: `Author '${personName}' added to favorites` });
+    } catch (error) {
+        console.error("Error adding favorite author:", error);
+        res.status(500).json({ message: 'Error adding favorite author', error: error.message });
+    }
+};
+
+
+// Remove a favorite author
+exports.removeFavoriteAuthor = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const { personId } = req.params;
+
+        const favoriteAuthor = await UserFavoriteAuthor.destroy({
+            where: { userId, personId }
+        });
+
+        if (!favoriteAuthor) {
+            return res.status(404).json({ message: 'Favorite author not found' });
+        }
+
+        res.status(200).json({ message: 'Favorite author removed successfully' });
+    } catch (error) {
+        console.error("Error removing favorite author:", error);
+        res.status(500).json({ message: 'Error removing favorite author', error: error.message });
     }
 };

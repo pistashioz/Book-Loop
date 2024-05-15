@@ -51,7 +51,21 @@ router.route('/me/navigation-history')
     .get(verifyToken, usersController.getEntries);
 
 router.delete('/me/navigation-history/:id?', verifyToken, usersController.deleteEntries);
-/* router.delete('/me/navigation-history', verifyToken, usersController.deleteAllEntries); */
+
+// Routes for favorite genres
+router.route('/me/favorite-genres')
+    .get(verifyToken, usersController.getFavoriteGenres)
+    .post(verifyToken, usersController.addFavoriteGenre);
+
+router.delete('/me/favorite-genres/:genreId', verifyToken, usersController.removeFavoriteGenre);
+
+// Routes for favorite authors
+router.route('/me/favorite-authors')
+    .get(verifyToken, usersController.getFavoriteAuthors)
+    .post(verifyToken, usersController.addFavoriteAuthor);
+
+router.delete('/me/favorite-authors/:personId', verifyToken, usersController.removeFavoriteAuthor);
+
 
 
 

@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const personController = require('../controllers/person.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isAdmin } = require('../middleware/admin');
+
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -14,12 +17,12 @@ router.use((req, res, next) => {
 
 router.route('/')
     .get(personController.findAll)
-    .post(personController.create);
+    .post(verifyToken, isAdmin, personController.create);
 
 router.route('/:personId')
-    .get(personController.findPerson)
-    .patch(personController.updatePerson)
-    .delete(personController.removePerson);
+    .get(personController.findPerson) // This might not be needed! Otherwise, we would need to make  a person profile page
+    .patch(verifyToken, isAdmin, personController.updatePerson)
+    .delete(verifyToken, isAdmin, personController.removePerson);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

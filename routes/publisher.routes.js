@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const publisherController = require('../controllers/publisher.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isAdmin } = require('../middleware/admin');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -15,10 +17,10 @@ router.use((req, res, next) => {
 // Routes for handling publisher operations
 router.route('/')
     .get(publisherController.findAll)
-    .post(publisherController.create);
+    .post(verifyToken, isAdmin, publisherController.create);
 
 router.route('/:publisherId/works')
-    .get(publisherController.findPublishersWorks);
+    .get(publisherController.findPublishersWorks); // This needs correction a publisher is to bookEditions and not a work
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const workController = require('../controllers/works.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isAdmin } = require('../middleware/admin');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -14,51 +16,51 @@ router.use((req, res, next) => {
 
 // Route to handle operations on all works
 router.route('/')
-    .get(workController.findAll)
-    .post(workController.create);
+    .get(verifyToken, isAdmin, workController.findAll)
+    .post(verifyToken, isAdmin, workController.create);
 
 // Routes to handle operations on a specific work by ID
 router.route('/:workId')
-    .get(workController.findWork)
-    .patch(workController.updateWorkById)
-    .delete(workController.removeWorkById);
+    .get(verifyToken, isAdmin, workController.findWork)
+    .patch(verifyToken, isAdmin, workController.updateWorkById)
+    .delete(verifyToken, isAdmin, workController.removeWorkById);
 
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
-    .get(workController.getEditions)
-    .post(workController.addEdition);
+    .get(verifyToken, isAdmin, workController.getEditions)
+    .post(verifyToken, isAdmin, workController.addEdition);
 
 router.route('/:workId/editions/:bookEditionId')
     .get(workController.getBookEdition)
-    .patch(workController.updateBookEdition)
-    .delete(workController.removeBookEdition);
+    .patch(verifyToken, isAdmin,workController.updateBookEdition)
+    .delete(verifyToken, isAdmin, workController.removeBookEdition);
 
 // Routes to handle operations on reviews of a specific work by ID
 router.route('/:workId/reviews')
     .get(workController.getReviews)
-    .post(workController.addReview);
+    .post(verifyToken, workController.addReview);
 
 router.route('/:workId/reviews/:literaryReviewId')
-    .patch(workController.updateReview)
+    .patch(verifyToken, workController.updateReview)
     .get(workController.getReview)
-    .delete(workController.deleteReview);
+    .delete(verifyToken, workController.deleteReview);
 
 router.route('/:workId/reviews/:literaryReviewId/likes')
-    .post(workController.likeReview)
-    .delete(workController.removeLikeReview);
+    .post(verifyToken, workController.likeReview)
+    .delete(verifyToken, workController.removeLikeReview);
 
 // Routes to handle operations on comments of a specific review
 router.route('/:workId/reviews/:literaryReviewId/comments')
     .get(workController.getReviewsComments)
-    .post(workController.addCommentToReview);
+    .post(verifyToken, workController.addCommentToReview);
 
 router.route('/:workId/reviews/:literaryReviewId/comments/:commentId')
-    .patch(workController.editCommentOfReview)
-    .delete(workController.removeCommentFromReview);
+    .patch(verifyToken, workController.editCommentOfReview)
+    .delete(verifyToken, workController.removeCommentFromReview);
 
 router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
-    .post(workController.likeComment)
-    .delete(workController.removeLikeComment);
+    .post(verifyToken, workController.likeComment)
+    .delete(verifyToken, workController.removeLikeComment);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

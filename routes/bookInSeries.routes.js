@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const bookInSeriesController = require('../controllers/bookInSeries.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isAdmin } = require('../middleware/admin');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -14,7 +16,7 @@ router.use((req, res, next) => {
 
 router.route('/')
     .get(bookInSeriesController.find)
-    .post(bookInSeriesController.create);
+    .post(verifyToken, isAdmin, bookInSeriesController.create);
 
 router.route('/:seriesId/works')
     .get(bookInSeriesController.findAll);

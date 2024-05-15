@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const bookEditionController = require('../controllers/bookEdition.controller');
+const { verifyToken } = require('../middleware/authJwt');
+const { isAdmin } = require('../middleware/admin');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -14,7 +16,7 @@ router.use((req, res, next) => {
 
 router.route('/')
     .get(bookEditionController.findAll)
-    .post(bookEditionController.create);
+    .post(verifyToken, isAdmin, bookEditionController.create);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {
