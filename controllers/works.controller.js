@@ -116,7 +116,7 @@ exports.create = async (req, res) => {
     try {
         const { originalTitle, firstPublishedDate, seriesId = null, seriesOrder = null, authors = [], genres = [], edition = null } = req.body;
 
-        // Check for duplicate work
+        // Check for duplicate work - this needs checking!!! should we check for both firstPublishedDate and author or just one of them?
         const existingWork = await Work.findOne({
             where: { originalTitle, firstPublishedDate },
             include: [{
