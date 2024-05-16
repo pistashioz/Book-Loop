@@ -19,6 +19,7 @@ router.route('/')
     .get(personController.findAll)
     .post(verifyToken, isAdmin, personController.create);
 
+
 router.route('/:personId')
     .get(personController.findPerson) // This might not be needed! Otherwise, we would need to make  a person profile page
     .patch(verifyToken, isAdmin, personController.updatePerson)

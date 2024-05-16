@@ -19,8 +19,12 @@ router.route('/')
     .get(publisherController.findAll)
     .post(verifyToken, isAdmin, publisherController.create);
 
-router.route('/:publisherId/works')
-    .get(publisherController.findPublishersWorks); // This needs correction a publisher is to bookEditions and not a work
+
+router.route('/:publisherId')
+    .delete(verifyToken, isAdmin, publisherController.deletePublisher);
+
+    router.route('/:publisherId/editions')
+    .get(publisherController.findEditionsByPublisher);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

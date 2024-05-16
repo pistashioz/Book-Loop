@@ -1,117 +1,367 @@
 const db = require('../models');
-const Person = db.person;
-const { ValidationError, Op } = require('sequelize'); // necessary for model validations using sequelize
+const {Person, Work, BookAuthor, BookEdition, BookContributor, LiteraryReview, BookInSeries} = db;
+const { ValidationError, Op, fn, col } = require('sequelize'); // necessary for model validations using sequelize
 
-// Find all persons
+
+
+/**
+ * Retrieve all persons with pagination and role filtering.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.findAll = async (req, res) => {
     try {
-        const persons = await Person.findAll(); // Wait for the promise to resolve
-        return res.status(200).json({
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        const { role } = req.query;
+
+        const where = {};
+        if (role) {
+            where.roles = { [Op.contains]: [role] };
+        }
+
+        const { count, rows: persons } = await Person.findAndCountAll({
+            where,
+            limit,
+            offset
+        });
+
+        const totalPages = Math.ceil(count / limit);
+
+        // Fetch detailed counts for each person
+        const detailedPersons = await Promise.all(persons.map(async person => {
+            const worksCountQuery = `
+                SELECT COUNT(*) as worksCount
+                FROM bookAuthor
+                WHERE personId = ${person.personId}
+            `;
+            const [worksCountResult] = await db.sequelize.query(worksCountQuery);
+            const worksCount = worksCountResult[0].worksCount;
+
+            const audiobookCountQuery = `
+                SELECT COUNT(*) as audiobookCount
+                FROM bookContributor
+                JOIN bookEdition ON bookContributor.editionISBN = bookEdition.ISBN
+                WHERE personId = ${person.personId} AND editionType = 'Audiobook'
+            `;
+            const [audiobookCountResult] = await db.sequelize.query(audiobookCountQuery);
+            const audiobookCount = audiobookCountResult[0].audiobookCount;
+
+            const translationCountQuery = `
+                SELECT COUNT(*) as translationCount
+                FROM bookContributor
+                JOIN bookEdition ON bookContributor.editionISBN = bookEdition.ISBN
+                WHERE personId = ${person.personId} AND editionType != 'Audiobook'
+            `;
+            const [translationCountResult] = await db.sequelize.query(translationCountQuery);
+            const translationCount = translationCountResult[0].translationCount;
+
+            return {
+                ...person.toJSON(),
+                worksCount,
+                audiobookCount,
+                translationCount
+            };
+        }));
+
+        res.status(200).json({
             success: true,
-            data: persons
+            totalItems: count,
+            totalPages,
+            currentPage: page,
+            persons: detailedPersons
         });
     } catch (error) {
-        return res.status(400).json({
-            message: error.message || "Some error occurred"
-        });
+        console.error("Error fetching persons:", error);
+        res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching persons" });
     }
 };
 
-// Create a new person
+
+/**
+ * Create a new person.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.create = async (req, res) => {
     try {
-        const { roles } = req.body; 
-        const validRoles = ['translator', 'author'];
-        const rolesArray = roles.split(',').map(role => role.trim().toLowerCase());
+        const { personName, roles } = req.body;
+        const validRoles = ['author', 'translator', 'narrator'];
 
-        // Validate roles
-        for (const role of rolesArray) {
+        // Ensure roles are valid
+        if (!roles || !Array.isArray(roles) || roles.length === 0) {
+            return res.status(400).json({ success: false, message: 'Roles are required and should be a non-empty array.' });
+        }
+        
+        for (const role of roles) {
             if (!validRoles.includes(role)) {
-                return res.status(400).json({ error: "Invalid role" });
+                return res.status(400).json({ success: false, message: `Invalid role: ${role}. Valid roles are: ${validRoles.join(', ')}.` });
             }
         }
 
-        const newPerson = await Person.create(req.body);
+        // Check if person already exists
+        const existingPerson = await Person.findOne({ where: { personName } });
+        if (existingPerson) {
+            return res.status(400).json({ success: false, message: 'Person with this name already exists.' });
+        }
+
+        const newPerson = await Person.create({ personName, roles });
         res.status(201).json({
             success: true,
-            msg: 'New Person created',
-            URL: `/authors/${newPerson.personId}`
+            message: 'New Person created',
+            URL: `/persons/${newPerson.personId}`
         });
     } catch (err) {
         if (err instanceof ValidationError) {
-            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+            return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {
-            res.status(500).json({
+            return res.status(500).json({
                 message: err.message || "Some error occurred while creating the person"
             });
         }
     }
 };
 
-// Find a person by ID
+
+/**
+ * Find a person by ID with detailed information.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.findPerson = async (req, res) => {
     try {
-        const person = await Person.findByPk(req.params.personId);
-        if (person === null) {
-            return res.status(404).json({
-                success: false,
-                msg: `No person found with id ${req.params.personId}`
-            });
-        }
-        return res.status(200).json({
-            success: true,
-            data: person,
-            links: [
-                { "rel": "self", "href": `/persons/${person.personId}`, "method": "GET" },
-                { "rel": "delete", "href": `/persons/${person.personId}`, "method": "DELETE" },
-                { "rel": "modify", "href": `/persons/${person.personId}`, "method": "PUT" }
+        const { personId } = req.params;
+
+        // Check if the person exists
+        const person = await Person.findByPk(personId, {
+            include: [
+                {
+                    model: BookAuthor,
+                    include: [
+                        {
+                            model: Work,
+                            include: [
+                                {
+                                    model: LiteraryReview,
+                                    attributes: []
+                                },
+                                {
+                                    model: BookInSeries,
+                                    attributes: ['seriesName']
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    model: BookContributor,
+                    include: [
+                        {
+                            model: BookEdition
+                        }
+                    ]
+                }
             ]
         });
-    } catch (err) {
-        return res.status(400).json({ message: err.message || "Some error occurred" });
+
+        if (!person) {
+            return res.status(404).json({
+                success: false,
+                msg: `No person found with ID ${personId}`
+            });
+        }
+        console.log(person.dataValues);
+        console.log(person.bookAuthors);
+       
+        // Transform works to include additional information
+        const works = await Promise.all(person.bookAuthors.map(async (bookAuthor) => {
+            const work = bookAuthor.Work;
+            const literaryReviewsCount = await LiteraryReview.count({ where: { workId: work.workId } });
+            const averageRating = await LiteraryReview.findOne({
+                where: { workId: work.workId },
+                attributes: [[db.sequelize.fn('AVG', db.sequelize.col('literaryRating')), 'averageRating']],
+                raw: true
+            });
+            const coverEdition = await BookEdition.findOne({
+                where: {
+                    title: work.originalTitle,
+                    publicationDate: work.firstPublishedDate
+                },
+                attributes: ['coverImage']
+            });
+           
+            return {
+                workId: work.workId,
+                originalTitle: work.originalTitle,
+                firstPublishedDate: work.firstPublishedDate,
+                seriesId: work.seriesId,
+                seriesName: work.BookInSeries ? work.BookInSeries.seriesName : null,
+                seriesOrder: work.seriesOrder,
+                reviewsCount: literaryReviewsCount,
+                averageRating: averageRating ? averageRating.averageRating : null,
+                coverImage: coverEdition ? coverEdition.coverImage : null
+            };
+        }));
+
+        // Transform editions to include additional information
+        console.log();
+        const editions = person.bookContributors.map((bookContributor) => {
+            const edition = bookContributor.BookEdition;
+            return {
+                ISBN: edition.ISBN,
+                title: edition.title,
+                editionType: edition.editionType,
+                language: edition.language,
+                pageNumber: edition.pageNumber,
+                publicationDate: edition.publicationDate,
+                coverImage: edition.coverImage
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            person: {
+                personId: person.personId,
+                personName: person.personName,
+                roles: person.roles,
+                worksCount: works.length,
+                editionsCount: editions.length,
+                works,
+                editions
+            },
+            links: [
+                { rel: "self", href: `/persons/${person.personId}`, method: "GET" },
+                { rel: "delete", href: `/persons/${person.personId}`, method: "DELETE" },
+                { rel: "modify", href: `/persons/${person.personId}`, method: "PATCH" }
+            ]
+        });
+    } catch (error) {
+        console.error("Error fetching person:", error);
+        res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the person" });
     }
 };
 
-// Update a person by ID
+
+/**
+ * Update a person by ID
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.updatePerson = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
-        const affectedRows = await Person.update(req.body, { where: { personId: req.params.personId } });
-        if (affectedRows[0] === 0) {
-            return res.status(200).json({
-                success: true,
-                msg: `No updates were made on person with ID ${req.params.personId}`
-            });
+        const { personId } = req.params;
+        const { personName, roles, works, editions } = req.body;
+
+        // Check if the person exists
+        const person = await Person.findByPk(personId);
+        if (!person) {
+            await t.rollback();
+            return res.status(404).json({ success: false, msg: `Person with ID ${personId} not found.` });
         }
-        return res.json({
-            success: true,
-            msg: `Person with ID ${req.params.personId} was updated successfully.`
-        });
+
+        // Update person details if provided
+        if (personName || roles) {
+            await person.update({ personName, roles }, { transaction: t });
+        }
+
+        // Handle associations with works if provided
+        if (works) {
+            for (const workId of works) {
+                const work = await Work.findByPk(workId);
+                if (!work) {
+                    await t.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: `Work with ID ${workId} not found.`,
+                        links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+                    });
+                }
+                await BookAuthor.create({ workId, personId }, { transaction: t });
+            }
+        }
+
+        // Handle associations with editions if provided
+        if (editions) {
+            for (const editionISBN of editions) {
+                const edition = await BookEdition.findByPk(editionISBN);
+                if (!edition) {
+                    await t.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: `Edition with ISBN ${editionISBN} not found.`,
+                        links: [{ rel: 'create-edition', href: '/editions', method: 'POST' }]
+                    });
+                }
+                await BookContributor.create({ editionISBN, personId }, { transaction: t });
+            }
+        }
+
+        await t.commit();
+        return res.json({ success: true, msg: `Person with ID ${personId} was updated successfully.` });
     } catch (err) {
+        await t.rollback();
+        console.error("Error updating person:", err);
         if (err instanceof ValidationError) {
             res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
         } else {
-            res.status(500).json({
-                success: false, msg: err.message || "Some error occurred while updating the person."
-            });
+            res.status(500).json({ success: false, msg: err.message || "Some error occurred while updating the person." });
         }
     }
 };
 
-// Remove a person by ID
+
+
+/**
+ * Remove a person by ID.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.removePerson = async (req, res) => {
+    const { personId } = req.params;
     try {
-        const personId = req.params.personId;
-        const found = await Person.destroy({ where: { personId } });
-        if (found === 1) {
-            return res.status(204).json({
-                success: true,
-                msg: `Person with id ${personId} was successfully deleted!`
+        // Check if the person exists
+        const person = await Person.findByPk(personId);
+        if (!person) {
+            return res.status(404).json({ success: false, message: 'Person not found.' });
+        }
+
+        // Check if the person is associated with any works
+        const associatedWorksCount = await BookAuthor.count({ where: { personId } });
+        if (associatedWorksCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete person with associated works.',
+                links: [{ rel: 'self', href: `/persons/${personId}/works`, method: 'GET' }]
             });
         }
-        return res.status(404).json({
-            success: false, msg: `Cannot find any person with ID ${personId}`
-        });
-    } catch (err) {
-        return res.status(400).json({ message: err.message || 'Invalid or incomplete data provided.' });
+
+        // Check if the person is associated with any book editions
+        const associatedEditionsCount = await BookContributor.count({ where: { personId } });
+        if (associatedEditionsCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete person with associated book editions.',
+                links: [{ rel: 'self', href: `/persons/${personId}/editions`, method: 'GET' }]
+            });
+        }
+
+        // Delete the person
+        await person.destroy();
+        res.status(204).json({ success: true, message: 'Person deleted successfully.' });
+    } catch (error) {
+        console.error("Error deleting person:", error);
+        res.status(500).json({ success: false, message: error.message || "Some error occurred while deleting the person." });
     }
 };

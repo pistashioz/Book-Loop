@@ -864,10 +864,10 @@ exports.updateBookEdition = async (req, res) => {
             }
         }
 
-        // Ensure no field is updated to null/empty/undefined
+        // Ensure no field is updated to null/empty/undefined if the field is present in the request body
         const requiredFields = ['title', 'synopsis', 'editionType', 'language', 'pageNumber', 'coverImage'];
         for (const field of requiredFields) {
-            if (updatedData[field] === null || updatedData[field] === undefined || updatedData[field] === '') {
+            if (updatedData.hasOwnProperty(field) && (updatedData[field] === null || updatedData[field] === undefined || updatedData[field] === '')) {
                 return res.status(400).json({ success: false, message: `${field} cannot be null or empty.` });
             }
         }
@@ -891,6 +891,7 @@ exports.updateBookEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || 'Some error occurred while updating the book edition.' });
     }
 };
+
 
 
 /**
