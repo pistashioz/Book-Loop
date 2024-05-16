@@ -12,31 +12,12 @@ module.exports = (sequelize, DataTypes) => {
             validate: { 
                 notNull: { msg: "Genre name cannot be empty!" }
             }
-        },
-        isApproved: { 
-            type: DataTypes.BOOLEAN, 
-            defaultValue: false 
-        },
-        createdBy: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            references: {
-                model: 'user',
-                key: 'userId'
-            }
-        },
-        approvedBy: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            references: {
-                model: 'user',
-                key: 'userId'
-            }
         }
     }, {
         timestamps: false,
         freezeTableName: true,
-        tableName: 'genre'
+        tableName: 'genre',
+        indexes: [ { unique: true, fields: ['genreName']}]
     });
     
     return Genre;

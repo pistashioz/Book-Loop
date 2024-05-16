@@ -21,7 +21,7 @@ router.route('/')
 
 
 router.route('/:personId')
-    .get(personController.findPerson) // This might not be needed! Otherwise, we would need to make  a person profile page
+    .get(personController.findPerson) 
     .patch(verifyToken, isAdmin, personController.updatePerson)
     .delete(verifyToken, isAdmin, personController.removePerson);
 

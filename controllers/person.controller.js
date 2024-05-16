@@ -154,6 +154,7 @@ exports.findPerson = async (req, res) => {
                                 },
                                 {
                                     model: BookInSeries,
+                                    as: 'BookInSeries',
                                     attributes: ['seriesName']
                                 }
                             ]
@@ -177,9 +178,7 @@ exports.findPerson = async (req, res) => {
                 msg: `No person found with ID ${personId}`
             });
         }
-        console.log(person.dataValues);
-        console.log(person.bookAuthors);
-       
+
         // Transform works to include additional information
         const works = await Promise.all(person.bookAuthors.map(async (bookAuthor) => {
             const work = bookAuthor.Work;
@@ -196,7 +195,8 @@ exports.findPerson = async (req, res) => {
                 },
                 attributes: ['coverImage']
             });
-           
+            const editionsCount = await BookEdition.count({ where: { workId: work.workId } });
+            
             return {
                 workId: work.workId,
                 originalTitle: work.originalTitle,
@@ -206,12 +206,12 @@ exports.findPerson = async (req, res) => {
                 seriesOrder: work.seriesOrder,
                 reviewsCount: literaryReviewsCount,
                 averageRating: averageRating ? averageRating.averageRating : null,
-                coverImage: coverEdition ? coverEdition.coverImage : null
+                coverImage: coverEdition ? coverEdition.coverImage : null,
+                editionsCount
             };
         }));
 
         // Transform editions to include additional information
-        console.log();
         const editions = person.bookContributors.map((bookContributor) => {
             const edition = bookContributor.BookEdition;
             return {
@@ -247,6 +247,7 @@ exports.findPerson = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the person" });
     }
 };
+
 
 
 /**

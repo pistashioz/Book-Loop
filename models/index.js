@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-//  return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+        // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
 /*     .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -101,7 +101,7 @@ db.User.hasMany(db.PurchaseReview, { as: 'SellerReviews', foreignKey: 'sellerUse
 db.PurchaseReview.belongsTo(db.User, { as: 'Seller', foreignKey: 'sellerUserId' });
 
 db.BookInSeries.hasMany(db.Work, { foreignKey: 'seriesId', onDelete: 'CASCADE' });
-db.Work.belongsTo(db.BookInSeries, { foreignKey: 'seriesId', as: ''});
+db.Work.belongsTo(db.BookInSeries, { foreignKey: 'seriesId', as: 'BookInSeries',});
 
 db.Publisher.hasMany(db.BookEdition, { foreignKey: 'publisherId', onDelete: 'RESTRICT' });
 db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
