@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-//    return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+//  return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
 /*     .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -109,8 +109,8 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
 
-db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionId', onDelete: 'CASCADE' });
-db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionId' });
+db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionISBN', onDelete: 'CASCADE' });
+db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionISBN' });
 
 db.Work.hasMany(db.BookAuthor, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookAuthor.belongsTo(db.Work, { foreignKey: 'workId'});

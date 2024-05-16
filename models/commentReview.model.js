@@ -1,5 +1,3 @@
-const { validate } = require("node-cron");
-
 module.exports = (sequelize, DataTypes) => {
     const CommentReview = sequelize.define('CommentReview', {
         commentId: {
@@ -24,9 +22,15 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         comment: {
-            type: DataTypes.TEXT,
+            type: DataTypes.STRING(255),
             allowNull: false,
-            validate: { notNull: { msg: 'Comment cannot be empty!' } }
+            validate: {
+                notEmpty: { msg: 'Comment cannot be empty.' },
+                len: {
+                    args: [1, 255],
+                    msg: 'Comment must be less than 255 characters.'
+                }
+            }
         },
         creationDate: {
             type: DataTypes.DATE,

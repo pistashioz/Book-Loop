@@ -27,10 +27,10 @@ router.route('/:workId')
 
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
-    .get(verifyToken, workController.getEditions)
+    .get( workController.getEditions)
     .post(verifyToken, isAdmin, workController.addEdition);
 
-router.route('/:workId/editions/:bookEditionId')
+router.route('/:workId/editions/:bookEditionId') /// falta esta
     .get(workController.getBookEdition)
     .patch(verifyToken, isAdmin,workController.updateBookEdition)
     .delete(verifyToken, isAdmin, workController.removeBookEdition);
@@ -42,7 +42,7 @@ router.route('/:workId/reviews')
 
 router.route('/:workId/reviews/:literaryReviewId')
     .patch(verifyToken, workController.updateReview)
-    .get(workController.getReview)
+    // .get(workController.getReview) // i think this is not necessary for now as the info we would get it's the same we would get from .getReviews - if more features would be added in the future then it would be necessary to add this route
     .delete(verifyToken, workController.deleteReview);
 
 router.route('/:workId/reviews/:literaryReviewId/likes')

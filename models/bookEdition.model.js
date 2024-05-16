@@ -1,71 +1,77 @@
 const { getEnumValues } = require('../utils/sequelizeHelpers');
 
 module.exports = (sequelize, DataTypes) => {
-    const BookEdition = sequelize.define('BookEdition', {
-      ISBN: {
-        type: DataTypes.STRING(20),
-        primaryKey: true
-      },
-      workId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'work', 
-          key: 'workId' 
+  const BookEdition = sequelize.define('BookEdition', {
+    ISBN: {
+      type: DataTypes.STRING(20),
+      primaryKey: true,
+      validate: {
+        isValidISBN(value) {
+          if (!/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
+            throw new Error('Invalid ISBN format.');
+          }
         }
-      },
-      publisherId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'publisher', 
-          key: 'publisherId' 
-        }
-      },
-      title: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        validate: { notNull: { msg: 'Title cannot be null or empty!' } }
-      },
-      synopsis: {
-        type: DataTypes.TEXT,
-        allowNull: false,
-        validate: { notNull: { msg: 'Synopsis cannot be null or empty!' } }
+      }
+    },
+    workId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'work', 
+        key: 'workId' 
+      }
+    },
+    publisherId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'publisher', 
+        key: 'publisherId' 
+      }
+    },
+    title: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: { notNull: { msg: 'Title cannot be null or empty!' } }
+    },
+    synopsis: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      validate: { notNull: { msg: 'Synopsis cannot be null or empty!' } }
     },
     editionType: {
-        type: DataTypes.ENUM('Paperback', 'Hardcover', 'Audiobook', 'Ebook'),
-        allowNull: false,
-        validate: {
-            isValidEditionType(value) {
-                const allowedValues = getEnumValues(sequelize, 'BookEdition', 'editionType');
-                if (!allowedValues.includes(value)) {
-                    throw new Error('Invalid edition type selection');
-                }
-            }
+      type: DataTypes.ENUM('Paperback', 'Hardcover', 'Audiobook', 'Ebook'),
+      allowNull: false,
+      validate: {
+        isValidEditionType(value) {
+          const allowedValues = getEnumValues(sequelize, 'BookEdition', 'editionType');
+          if (!allowedValues.includes(value)) {
+            throw new Error('Invalid edition type selection');
+          }
         }
+      }
     },
-      publicationDate: {
-        type: DataTypes.DATEONLY,
+    publicationDate: {
+      type: DataTypes.DATEONLY,
     },
-      language: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        validate: { notNull: { msg: 'Language cannot be null or empty!' } }
-      },
-      pageNumber: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
+    language: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: { notNull: { msg: 'Language cannot be null or empty!' } }
+    },
+    pageNumber: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
     coverImage: {
-        type: DataTypes.STRING,
-        allowNull: false,
+      type: DataTypes.STRING,
+      allowNull: false,
     }
-    }, {
-      tableName: 'bookEdition',
-      timestamps: false,
-      freezeTableName: true,
-    });
+  }, {
+    tableName: 'bookEdition',
+    timestamps: false,
+    freezeTableName: true,
+  });
   
-    return BookEdition;
-  };
-  
+  return BookEdition;
+};
