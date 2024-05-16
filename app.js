@@ -50,6 +50,9 @@ app.use('/wishlist', wishlistRoutes);
 const adminRoutes = require('./routes/admin.routes');
 app.use('/admin', adminRoutes);
 
+const listingRoutes = require('./routes/listings.routes');
+ app.use('/listings', listingRoutes);
+
 const worksRoutes = require('./routes/works.routes');
 app.use('/works', worksRoutes);
 

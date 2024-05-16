@@ -25,11 +25,19 @@ module.exports = (sequelize, DataTypes) => {
         },
         listingTitle: {
             type: DataTypes.STRING,
-            allowNull: false
+            allowNull: false,
+            validate: {
+                notNull: { msg: 'Listing title cannot be null or empty!' },
+                len: {
+                    args: [1, 100], // Adjust the max length as needed
+                    msg: 'Listing title must be between 1 and 100 characters long.'
+                }
+            }
         },
         listingDate: {
             type: DataTypes.DATE,
-            allowNull: false
+            allowNull: false,
+            defaultValue: DataTypes.NOW
         },
         price: {
             type: DataTypes.DECIMAL(10, 2),
@@ -48,7 +56,7 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         availability: {
-            type: DataTypes.ENUM('Active', 'Sold', 'Hidden', 'Reserved'),
+            type: DataTypes.ENUM('Active', 'Sold', 'Hidden', 'Reserved', 'Pending Approval'),
             allowNull: false,
             defaultValue: 'Active',
             validate: {
@@ -62,7 +70,14 @@ module.exports = (sequelize, DataTypes) => {
         },
         listingDescription: {
             type: DataTypes.TEXT,
-            allowNull: false
+            allowNull: false,
+            validate: {
+                notNull: { msg: 'Listing description cannot be null or empty!' },
+                len: {
+                    args: [20, 2000], // Adjust the min and max length as needed
+                    msg: 'Listing description must be between 20 and 2000 characters long.'
+                }
+            }
         }
     }, {
         tableName: 'listing',
