@@ -25,12 +25,8 @@ router.route('/:genreId')
     .patch(verifyToken, isAdmin, genreController.updateGenre)
     .delete(verifyToken, isAdmin, genreController.deleteGenre);
 
-/* router.route('/')
-    .get(genreController.findGenres);
 
-router.route('/:genreId')
-    .get(genreController.findGenre);
- */
+
 // Handle unsupported routes
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested genre could not be found. Please check the URL and API documentation.' });

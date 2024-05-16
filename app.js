@@ -56,26 +56,26 @@ app.use('/works', worksRoutes);
 const bookInSeriesRoutes = require('./routes/bookInSeries.routes');
 app.use('/book-in-series', bookInSeriesRoutes);
 
-const bookEditionRoutes = require('./routes/bookEdition.routes');
-app.use('/book', bookEditionRoutes);
+/* const bookEditionRoutes = require('./routes/bookEdition.routes');
+app.use('/book', bookEditionRoutes); */
 
 const publisherRoutes = require('./routes/publisher.routes');
 app.use('/publishers', publisherRoutes);
 
-const bookAuthorRoutes = require('./routes/bookAuthor.routes');
-app.use('/authors', bookAuthorRoutes);
+/* const bookAuthorRoutes = require('./routes/bookAuthor.routes');
+app.use('/authors', bookAuthorRoutes); */
 
 const personRoutes = require('./routes/person.routes');
 app.use('/persons', personRoutes);
 
-const bookContributorRoutes = require('./routes/bookContributor.routes');
+/* const bookContributorRoutes = require('./routes/bookContributor.routes');
 app.use('/contributors', bookContributorRoutes);
-
+ */
 const genreRoutes = require('./routes/genre.routes');
 app.use('/genres', genreRoutes);
 
-const bookGenreRoutes = require('./routes/bookGenre.routes');
-app.use('/book-genres', bookGenreRoutes);
+/* const bookGenreRoutes = require('./routes/bookGenre.routes');
+app.use('/book-genres', bookGenreRoutes); */
 
 // Catch-all for any unhandled routes, sending a 404 response
 app.all('*', (req, res) => {

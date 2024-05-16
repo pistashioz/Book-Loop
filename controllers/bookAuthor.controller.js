@@ -1,4 +1,4 @@
-const db = require('../models');
+/* const db = require('../models');
 const BookAuthor = db.bookAuthor;
 const { ValidationError, Op } = require('sequelize');
 
@@ -7,7 +7,7 @@ const { ValidationError, Op } = require('sequelize');
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+
 exports.findAuthors = async (req, res) => {
     try {
         const authors = await BookAuthor.findAll({
@@ -48,7 +48,7 @@ exports.findAuthors = async (req, res) => {
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+
 exports.findAuthor = async (req, res) => {
     try {
         const { workId } = req.params;
@@ -89,3 +89,4 @@ exports.findAuthor = async (req, res) => {
         });
     }
 };
+ */

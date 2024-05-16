@@ -15,12 +15,15 @@ router.use((req, res, next) => {
 });
 
 router.route('/')
-    .post(verifyToken, isAdmin, bookInSeriesController.createSeries);
+    .post(verifyToken, isAdmin, bookInSeriesController.createSeries)
+    .get(bookInSeriesController.findAllSeries);
 
 router.route('/:seriesId')
     .patch(verifyToken, isAdmin, bookInSeriesController.updateSeries)
-    .delete(verifyToken, isAdmin, bookInSeriesController.deleteSeries);
-    
+    .delete(verifyToken, isAdmin, bookInSeriesController.deleteSeries)
+    .get(bookInSeriesController.findSeriesById);
+
+
 // Handle unsupported routes
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested Book in Series resource could not be found. Please check the URL and API documentation.' });

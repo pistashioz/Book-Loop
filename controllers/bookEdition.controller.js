@@ -1,4 +1,4 @@
-const db = require('../models');
+/* const db = require('../models');
 const BookEdition = db.bookEdition;
 const { ValidationError, ForeignKeyConstraintError } = require('sequelize'); // Necessary for model validations using sequelize
 
@@ -7,7 +7,7 @@ const { ValidationError, ForeignKeyConstraintError } = require('sequelize'); // 
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+ 
 exports.findAll = async (req, res) => {
     try {
         const bookEditions = await BookEdition.findAll();
@@ -35,7 +35,7 @@ exports.findAll = async (req, res) => {
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+
 exports.create = async (req, res) => {
     try {
         const { workId, publisherId } = req.body;
@@ -64,3 +64,4 @@ exports.create = async (req, res) => {
         }
     }
 };
+ */

@@ -1,4 +1,4 @@
-const db = require('../models');
+/* const db = require('../models');
 const BookGenre = db.bookGenre;
 const { ValidationError, Op } = require('sequelize');
 
@@ -42,3 +42,4 @@ exports.findBookGenre = async (req, res) => {
         });
     }
 };
+ */

@@ -1,4 +1,4 @@
-const db = require('../models');
+/* const db = require('../models');
 const BookContributor = db.bookContributor;
 const { Op } = require('sequelize'); // Necessary for model validations using sequelize
 
@@ -7,7 +7,7 @@ const { Op } = require('sequelize'); // Necessary for model validations using se
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+ 
 exports.findAllContributors = async (req, res) => {
     try {
         const contributors = await BookContributor.findAll({
@@ -42,7 +42,7 @@ exports.findAllContributors = async (req, res) => {
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- */
+
 exports.findContributors = async (req, res) => {
     try {
         const contributors = await BookContributor.findAll({
@@ -74,3 +74,4 @@ exports.findContributors = async (req, res) => {
         });
     }
 };
+ */
