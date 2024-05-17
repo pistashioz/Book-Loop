@@ -1,6 +1,6 @@
-const { Op, ValidationError } = require("sequelize");
+const { Op, ValidationError, where } = require("sequelize");
 const db = require('../models')
-const { Listing, BookEdition, User, PurchaseReview, NavigationHistory, Wishlist, Work, BookAuthor, Person, BookGenre, Genre, PostalCode } = db;
+const { Listing, BookEdition, User, PurchaseReview, NavigationHistory, Wishlist, Work, BookAuthor, Person, BookGenre, Genre, PostalCode, ListingImage } = db;
 
 /**
  * Create a new listing.
@@ -112,6 +112,97 @@ exports.updateListing = async (req, res) => {
         }
     }
 };
+
+
+
+/**
+ * Retrieve all listings with optional search term, sorting, and pagination.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
+exports.findAllListings = async (req, res) => {
+    try {
+        const { searchTerm, sortBy = 'listingDate', order = 'DESC' } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        const { userId, isAdmin } = req;
+
+        // Build the search condition
+        let whereCondition = {
+            availability: 'Active' // Default to show only active listings
+        };
+
+        if (searchTerm) {
+            whereCondition[Op.or] = [
+                { listingTitle: { [Op.like]: `%${searchTerm}%` } },
+                { listingDescription: { [Op.like]: `%${searchTerm}%` } }
+            ];
+        }
+
+        // Fetch listings with related information and pagination
+        const { rows: listings, count } = await Listing.findAndCountAll({
+            where: whereCondition,
+            include: [
+                {
+                    model: User,
+                    attributes: ['username', 'profileImage']
+                },
+                {
+                    model: BookEdition,
+                    attributes: ['title']
+                },
+                {
+                    model: ListingImage,
+                    attributes: ['imageUrl'],
+                    limit: 1 // Only fetch the first image
+                }
+            ],
+            order: [[sortBy, order]],
+            limit,
+            offset
+        });
+
+        // Prepare the response data
+        const responseListings = await Promise.all(listings.map(async listing => {
+            const wishlistCount = await Wishlist.count({ where: { listingId: listing.listingId } });
+
+            return {
+                listingId: listing.listingId,
+                listingTitle: listing.listingTitle,
+                listingDescription: listing.listingDescription,
+                price: listing.price,
+                listingDate: listing.listingDate,
+                listingCondition: listing.listingCondition,
+                availability: listing.availability,
+                imageUrl: listing.ListingImages.length > 0 ? listing.ListingImages[0].imageUrl : null,
+                seller: {
+                    username: listing.User.username,
+                    profileImage: listing.User.profileImage
+                },
+                bookTitle: listing.BookEdition.title,
+                wishlistCount
+            };
+        }));
+
+        const totalPages = Math.ceil(count / limit);
+
+        res.status(200).json({
+            success: true,
+            message: "Listings fetched successfully.",
+            totalItems: count,
+            totalPages,
+            currentPage: page,
+            listings: responseListings
+        });
+    } catch (error) {
+        console.error("Error fetching listings:", error);
+        res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the listings." });
+    }
+};
+
 
 
 /**
@@ -234,3 +325,4 @@ exports.findListingById = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the listing." });
     }
 };
+
