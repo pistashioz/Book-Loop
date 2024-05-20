@@ -435,6 +435,7 @@ function setTokenCookies(res, accessToken, accessTokenExpiry, refreshToken, refr
 
 // Login action for user
 exports.login = async (req, res) => {
+    console.log('inside login action')
     const { usernameOrEmail, password, reactivate } = req.body;
     try {
         const t = await db.sequelize.transaction();
