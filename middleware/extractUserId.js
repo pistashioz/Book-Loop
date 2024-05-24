@@ -6,7 +6,7 @@ const { User } = db;
 // Middleware to extract user ID and admin status from the token
 const extractUserId = async (req, res, next) => {
     // Retrieve token from cookies or authorization header
-    const token = req.cookies?.accessToken || req.headers['authorization']?.split(' ')[1];
+    const token = req.cookies?.accessToken 
 
     if (!token) {
         return next(); // No token, proceed without setting userId

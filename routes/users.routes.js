@@ -24,8 +24,8 @@ router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 router.post('/me/refresh', usersController.refreshTokens);
 
 // Routes for handling account deactivation and deletion requests
-router.post('/me/deactivate', verifyToken, usersController.deactivateAccount);
-router.post('/me/delete', verifyToken, usersController.initiateAccountDeletion);
+router.patch('/me/deactivate', verifyToken, usersController.deactivateAccount);
+router.patch('/me/delete', verifyToken, usersController.initiateAccountDeletion);
 
 // Following a user
 router.post('/me/follow', verifyToken, usersController.followUser);
@@ -67,8 +67,6 @@ router.route('/me/favorite-authors')
 router.delete('/me/favorite-authors/:personId', verifyToken, usersController.removeFavoriteAuthor);
 
 
-
-
 // General user routes
 router.route('/')
     .get(usersController.findAll)
@@ -81,6 +79,7 @@ router.route('/:id')
 
 router.post('/login', usersController.login);
 router.post('/logout', verifyToken, usersController.logout);
+
 router.get('/validate-session', verifyToken, usersController.validateSession);
 
 // Handle unsupported routes
