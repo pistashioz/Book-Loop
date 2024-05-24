@@ -20,16 +20,10 @@ router.route('/')
 
 /* // Route to create a new listing
 router.post('/', verifyToken, listingsController.createListing); */
-/* 
-// Route to update an existing listing
-router.patch('/:listingId', verifyToken, listingsController.updateListing);
-
-// Get a specific listing by ID (public route)
-router.get('/:listingId', extractUserId, listingsController.findListingById);
- */
 
 router.route('/:listingId')
-    .get(verifyToken, listingsController.findListingById)
-    .patch(verifyToken, listingsController.updateListing);
+    .get( extractUserId, listingsController.findListingById)
+    .patch(verifyToken, listingsController.updateListing)
+
 
 module.exports = router;

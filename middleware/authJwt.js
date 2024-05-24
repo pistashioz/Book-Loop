@@ -32,8 +32,9 @@ async function verifyTokenHelper(token) {
  */
 exports.verifyToken = async (req, res, next) => {
     const accessToken = req.cookies['accessToken'];
+    
     if (!accessToken) {
-        return res.status(401).send({ message: "Access Token is missing or expired, please refresh token." });
+        return res.status(403).send({ message: "Access Token is missing or expired, please refresh token." });
     }
 
     try {

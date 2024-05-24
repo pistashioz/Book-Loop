@@ -5,7 +5,7 @@ const { User } = db;
 
 // Middleware to extract user ID and admin status from the token
 const extractUserId = async (req, res, next) => {
-    // Retrieve token from cookies or authorization header
+    // Retrieve token from cookies 
     const token = req.cookies?.accessToken 
 
     if (!token) {
@@ -14,11 +14,12 @@ const extractUserId = async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.id;
+        
 
         // Fetch the user details to check if the user is an admin
-        const user = await User.findByPk(req.userId);
+        const user = await User.findByPk(decoded.id);
         if (user) {
+            req.userId = decoded.id;
             req.isAdmin = user.isAdmin;
         }
     } catch (err) {
