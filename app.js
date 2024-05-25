@@ -11,7 +11,7 @@ const app = express();
 
 // Configure host and port from environment variables or use defaults
 const HOST = process.env.HOST || '127.0.0.1';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3360;
 
 // Enable CORS for all routes
 app.use(cors());
