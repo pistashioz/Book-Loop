@@ -293,33 +293,57 @@ exports.getReviews = async (req, res) => {
     }
 }
 exports.addReview = async (req, res) => {
-    try{
-        let work = await Work.findByPk(req.params.workId)
-        console.log('work:', work)
-        if (work === null){
-            return res.status(404).json({success:false,msg:`No work found with id ${req.params.workId}`})
+    try {
+        const { workId } = req.params;
+        const { literaryReview, literaryRating, userId } = req.body;
+
+        // Check if the work exists
+        const work = await Work.findByPk(workId);
+        if (!work) {
+            return res.status(404).json({ success: false, message: `No work found with ID ${workId}` });
         }
-        let review = req.body
-        console.log('review:' , review)
-        const newReview = await LiteraryReview.create({
-            workId: req.params.workId,
-            userId: req.body.userId,
-            LiteraryReview: req.body.LiteraryReview,
-            literaryRating: req.body.literaryRating
+
+        // Validate the required fields
+        if (!literaryRating && literaryRating !== 0) {
+            return res.status(400).json({ success: false, message: 'Literary rating is required' });
+        }
+
+        // Create the new review
+        const newReview = await db.literaryReview.create({
+            workId,
+            userId: userId,
+            literaryReview, // This can be undefined if not provided, which is acceptable
+            literaryRating,
+            creationDate: new Date() // Default to current date/time
         });
 
-        return res.status(201).json({
+        // Prepare response data
+        const response = {
             success: true,
-            msg: `Review created successfully`,
-            data: newReview 
+            message: 'Review created successfully',
+            data: newReview
+        };
+
+        // If the work is part of a series, add the series information
+        if (work.BookInSeries) {
+            response.series = {
+                seriesId: work.BookInSeries.seriesId,
+                seriesName: work.BookInSeries.seriesName,
+                seriesDescription: work.BookInSeries.seriesDescription,
+                seriesOrder: work.seriesOrder
+            };
+        }
+
+        return res.status(201).json(response);
+    } catch (err) {
+        console.error("Error adding review:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message || 'Some error occurred while adding the review'
         });
     }
-    catch (err) {
-        res.status(500).json({
-            success: false, msg: `Error adding review ${req.body}.`
-        });
-    }
-}
+};
+
 exports.updateReview = async(req, res) => {
     try{
         let affectedRows = await LiteraryReview.update(req.body, {where: {literaryReviewId: req.params.literaryReviewId}})

@@ -1,51 +1,45 @@
 module.exports = (sequelize, DataTypes) => {
-    const LiteraryReview = sequelize.define("literaryReview", {
+    const LiteraryReview = sequelize.define('LiteraryReview', {
         literaryReviewId: {
-            type: DataTypes.INTEGER(11),
-            primaryKey: true,
-            references: {
-                model: "literaryReview",
-                key: "literaryReviewId"
-            },
+            type: DataTypes.INTEGER,
             autoIncrement: true,
+            primaryKey: true
         },
         workId: {
-            type: DataTypes.INTEGER(11),
+            type: DataTypes.INTEGER,
             allowNull: false,
-            validate: { notNull: { msg: "Work ID can not be empty!" } },
             references: {
                 model: 'work',
-                key: 'workId' 
-              }
+                key: 'workId'
+            }
         },
         userId: {
-            type: DataTypes.INTEGER(11),
+            type: DataTypes.INTEGER,
             allowNull: false,
-            validate: { notNull: { msg: "User ID can not be empty!" } },
             references: {
                 model: 'user',
-                key: 'userId' 
-              }
+                key: 'userId'
+            }
         },
-        LiteraryReview: {
-            type: DataTypes.TEXT,
-            allowNull: true,
-            collate: 'utf8mb4_general_ci'
-        },
+        literaryReview: DataTypes.TEXT,
         literaryRating: {
-            type: DataTypes.DECIMAL(2, 1),
-            allowNull: true
+            type: DataTypes.DECIMAL(2,1),
+            allowNull: false,
+            validate: {
+                min: 0,
+                max: 5,
+                notNull: { msg: 'Please provide at least a rating for your review!' }
+            }
         },
         creationDate: {
-            type: DataTypes.DATE, //CURRENT_TIMESTAMP
-            defaultValue:  sequelize.literal('CURRENT_TIMESTAMP'),
-            allowNull: false,
-            validate: { notNull: { msg: "Creation Date can not be empty!" } },
+            type: DataTypes.DATE,
+            defaultValue: DataTypes.NOW
         }
     }, {
-        timestamps: false, 
-        freezeTableName: true,
-        tableName: 'literaryReview'
+        tableName: 'literaryReview',
+        timestamps: false,
+        freezeTableName: true
     });
+
     return LiteraryReview;
-}
+};

@@ -3,11 +3,17 @@ const express = require('express');
 const cors = require('cors'); // middleware to enable CORS (Cross-Origin Resource Sharing)
 const app = express();
 const { notFoundHandler }  = require('./middlewares/errorHandlers')
-
+// Define CORS options
+const corsOptions = {
+    origin: ['http://localhost:3000'], // Allow requests from this origin
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allow these HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allow these headers
+  };
 
 const port = process.env.PORT; // use environment variables
 const host = process.env.HOST;
-app.use(cors()); //enable ALL CORS requests (client requests from other domain)
+app.use(cors(corsOptions)); //enable ALL CORS requests (client requests from other domain)
+app.use(cors())
 app.use(express.json()); //enable parsing JSON body data
 // root route -- /api/
 app.get('/', function (req, res) {
