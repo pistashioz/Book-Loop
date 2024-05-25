@@ -3,28 +3,7 @@ const dayjs = require('dayjs');
 const config = require('../config/auth.config');
 const db = require('../models');
 const { Token, SessionLog } = db;
-
-/**
- * Helper function to handle token verification.
- * Verifies the provided token and returns the decoded data.
- * Rejects with detailed error info if verification fails.
- */
-async function verifyTokenHelper(token) {
-    return new Promise((resolve, reject) => {
-        jwt.verify(token, config.secret, (err, decoded) => {
-            if (err) {
-                if (err.name === 'TokenExpiredError') {
-                    const decodedPayload = jwt.decode(token, { complete: true });
-                    reject({ ...err, decodedPayload });  // Include decoded payload in rejection
-                } else {
-                    reject(err);
-                }
-            } else {
-                resolve(decoded);
-            }
-        });
-    });
-}
+const { verifyTokenHelper } = require('../utils/jwtHelpers');
 
 /**
  * Middleware to verify the validity of access tokens.
@@ -58,12 +37,17 @@ exports.verifyToken = async (req, res, next) => {
         req.sessionId = decoded.session;
         next();
     } catch (err) {
+/*         if (err.name === 'TokenExpiredError') {
+            const { decodedPayload } = err;
+            req.userId = decodedPayload.id;
+            req.sessionId = decodedPayload.session;
+            return res.status(403).send({ message: "Token expired. Please refresh token." });
+        } */
         res.clearCookie('accessToken');
         res.clearCookie('refreshToken');
         return res.status(401).send({ message: "Invalid token. Please log in again." });
     }
 };
-
 
 /**
  * Issues a new access token for a given user and session.

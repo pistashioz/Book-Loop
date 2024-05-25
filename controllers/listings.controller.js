@@ -263,7 +263,12 @@ exports.findListingById = async (req, res) => {
         // Check if the user is allowed to view the listing
         const isSeller = listing.sellerUserId === userId;
 
-        if (!isSeller && !isAdmin && (listing.availability === 'Hidden' || listing.availability === 'Pending Approval')) {
+        if (!userId && (listing.availability === 'Hidden' || listing.availability === 'Pending Approval')) {
+            // Non-users cannot view hidden or pending approval listings
+            return res.status(403).json({ success: false, message: 'You are not authorized to view this listing.' });
+        }
+
+        if (userId && !isSeller && !isAdmin && (listing.availability === 'Hidden' || listing.availability === 'Pending Approval')) {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this listing.' });
         }
 
@@ -325,4 +330,5 @@ exports.findListingById = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the listing." });
     }
 };
+
 

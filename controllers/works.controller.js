@@ -235,7 +235,7 @@ exports.create = async (req, res) => {
 };
 
 
-
+// NEED TO REVIEW - i DONT NEED THE BOOK EDITIONS HERE, HE WANT INSTEAD THE COUNT OF IT, AND THEN GET AUTHORS AND GENRES
 // Find a specific work by ID
 exports.findWork = async (req, res) => {
     try {
@@ -466,7 +466,6 @@ exports.updateWorkById = async (req, res) => {
     }
 };
 
-
 /**
  * Remove a specific work by ID.
  * 
@@ -498,7 +497,6 @@ exports.removeWorkById = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || 'Some error occurred while deleting the work.' });
     }
 };
-
 
 // Get editions of a specific work by ID with pagination
 exports.getEditions = async (req, res) => {
@@ -567,9 +565,6 @@ exports.getEditions = async (req, res) => {
         });
     }
 };
-
-
-
 
 /**
  * Add a new edition to a specific work by ID.
@@ -688,35 +683,6 @@ exports.addEdition = async (req, res) => {
     }
 };
 
-
-
-
-/**
- * Helper function to find or create a person.
- * 
- * @param {string} personName - Name of the person
- * @param {Array<string>} roles - Roles of the person
- * @param {Object} transaction - Sequelize transaction object
- * @returns {Promise<Object>} Person instance
- */
-async function findOrCreatePerson(personName, roles, transaction) {
-    let person = await db.Person.findOne({ where: { personName }, transaction });
-    if (!person) {
-        // Ensure roles are valid
-        const validRoles = ['author', 'translator', 'narrator'];
-        const rolesArray = Array.isArray(roles) ? roles : [roles];
-        const invalidRoles = rolesArray.filter(role => !validRoles.includes(role));
-        if (invalidRoles.length > 0) {
-            throw new Error(`Invalid roles provided: ${invalidRoles.join(', ')}`);
-        }
-
-        person = await db.Person.create({ personName, roles: rolesArray.join(',') }, { transaction });
-    }
-    return person;
-}
-
-
-
 /**
  * Get a specific book edition by work ID and book edition ID (ISBN).
  * 
@@ -797,12 +763,6 @@ exports.getBookEdition = async (req, res) => {
         });
     }
 };
-
-
-
-
-
-
 
 /**
  * Update a specific book edition by work ID and book edition ID (ISBN).
@@ -891,8 +851,6 @@ exports.updateBookEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || 'Some error occurred while updating the book edition.' });
     }
 };
-
-
 
 /**
  * Remove a specific book edition by work ID and book edition ID (ISBN).
@@ -1004,7 +962,6 @@ exports.getReviews = async (req, res) => {
     }
 };
 
-
 /**
  * Add a review to a specific work by ID.
  * 
@@ -1073,7 +1030,6 @@ exports.addReview = async (req, res) => {
     }
 };
 
-
 /**
 * Update a review for a specific work by ID.
 * 
@@ -1132,7 +1088,6 @@ exports.updateReview = async (req, res) => {
         }
     }
 };
-
 
 // Get a specific review by work ID and review ID
 exports.getReview = async (req, res) => {
@@ -1228,8 +1183,6 @@ exports.likeReview = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Error liking literary review.' });
     }
 };
-
-
 
 /**
  * Remove like from a review by review ID.
@@ -1330,8 +1283,6 @@ exports.getReviewsComments = async (req, res) => {
     }
 };
 
-
-
 /**
  * Add a comment to a specific review by work ID and review ID.
  * 
@@ -1392,7 +1343,6 @@ exports.addCommentToReview = async (req, res) => {
     }
 };
 
-
 /**
  * Edit a comment for a specific review by comment ID.
  * 
@@ -1449,7 +1399,6 @@ exports.editCommentOfReview = async (req, res) => {
     }
 };
 
-
 /**
  * Remove a comment from a specific review by comment ID.
  * 
@@ -1489,7 +1438,6 @@ exports.removeCommentFromReview = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while deleting the comment." });
     }
 };
-
 
 /**
  * Like a comment by comment ID.
@@ -1535,7 +1483,6 @@ exports.likeComment = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Error liking comment.' });
     }
 };
-
 
 /**
  * Remove like from a comment by comment ID.
