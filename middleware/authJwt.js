@@ -9,45 +9,35 @@ const { verifyTokenHelper } = require('../utils/jwtHelpers');
  * Middleware to verify the validity of access tokens.
  * Adds user and session IDs to the request object if valid.
  */
+// Verify token middleware
 exports.verifyToken = async (req, res, next) => {
-    const accessToken = req.cookies['accessToken'];
-    
-    if (!accessToken) {
-        return res.status(403).send({ message: "Access Token is missing or expired, please refresh token." });
+    console.log('Cookies:', req.cookies);  // Log cookies to debug
+  
+    const token = req.cookies.accessToken;
+    if (!token) {
+      console.log('No access token provided');
+      return res.status(403).send({ message: 'Access Token is missing or expired, please refresh token.' });
     }
-
+  
     try {
-        const decoded = await verifyTokenHelper(accessToken);
-        
-        // Check if the session is still valid
-        const session = await SessionLog.findOne({
-            where: {
-                sessionId: decoded.session,
-                endTime: null  // Ensures the session is still active
-            }
-        });
-
-        if (!session) {
-            res.clearCookie('accessToken');
-            res.clearCookie('refreshToken');
-            return res.status(403).send({ message: "Session has been terminated. Please log in again." });
-        }
-
-        req.userId = decoded.id;
-        req.sessionId = decoded.session;
-        next();
-    } catch (err) {
-/*         if (err.name === 'TokenExpiredError') {
-            const { decodedPayload } = err;
-            req.userId = decodedPayload.id;
-            req.sessionId = decodedPayload.session;
-            return res.status(403).send({ message: "Token expired. Please refresh token." });
-        } */
+      const decoded = await verifyTokenHelper(token);
+      const session = await SessionLog.findOne({ where: { sessionId: decoded.session, endTime: null } });
+      if (!session) {
         res.clearCookie('accessToken');
         res.clearCookie('refreshToken');
-        return res.status(401).send({ message: "Invalid token. Please log in again." });
+        return res.status(403).send({ message: 'Session has been terminated. Please log in again.' });
+      }
+      req.userId = decoded.id;
+      req.sessionId = decoded.session;
+      next();
+    } catch (error) {
+      res.clearCookie('accessToken');
+      res.clearCookie('refreshToken');
+      return res.status(401).send({ message: 'Invalid token. Please log in again.' });
     }
-};
+  };
+  
+  
 
 /**
  * Issues a new access token for a given user and session.

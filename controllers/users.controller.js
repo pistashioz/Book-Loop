@@ -418,20 +418,22 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 
 // Helper function to set cookies for refresh token and access token
 function setTokenCookies(res, accessToken, accessTokenExpiry, refreshToken, refreshTokenExpiry) {
+    const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('accessToken', accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        expires: accessTokenExpiry,
-        sameSite: 'Strict'
+      httpOnly: true,
+      secure: isProduction, // Ensure this is true in production
+      expires: accessTokenExpiry,
+      sameSite: isProduction ? 'None' : 'Strict' // 'None' for cross-site cookies
     });
     res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        expires: refreshTokenExpiry,
-        path: '/users/me/refresh',
-        sameSite: 'Strict'
+      httpOnly: true,
+      secure: isProduction,
+      expires: refreshTokenExpiry,
+      sameSite: isProduction ? 'None' : 'Strict',
+      path: '/users/me/refresh'
     });
-}
+  }
+  
 
 // Login action for user
 exports.login = async (req, res) => {
