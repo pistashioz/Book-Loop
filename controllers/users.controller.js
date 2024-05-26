@@ -596,18 +596,19 @@ exports.logout = async (req, res) => {
         // });
         
         // Clear token cookies
-        res.clearCookie('accessToken')
-        res.clearCookie('refreshToken')
-        
+        res.clearCookie('accessToken');
+        res.clearCookie('refreshToken', { path: '/users/me/refresh' }); // Specify the path to match the cookie
+
         await t.commit();
         
-        res.status(200).json({ message: "Logout successful.", logout: true});
+        res.status(200).json({ message: "Logout successful.", logout: true });
     } catch (error) {
         console.error("Failed operation: ", error);
         await t.rollback();
         res.status(500).json({ message: "Error during logout", error: error.message });
     }
 };
+
 
 // Controller to handle account deactivation
 exports.deactivateAccount = async (req, res) => {
