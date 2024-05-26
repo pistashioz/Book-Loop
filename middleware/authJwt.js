@@ -24,7 +24,7 @@ exports.verifyToken = async (req, res, next) => {
       const session = await SessionLog.findOne({ where: { sessionId: decoded.session, endTime: null } });
       if (!session) {
         res.clearCookie('accessToken');
-        res.clearCookie('refreshToken');
+        res.clearCookie('refreshToken', { path: '/users/me/refresh' }); 
         return res.status(403).send({ message: 'Session has been terminated. Please log in again.' });
       }
       req.userId = decoded.id;
@@ -32,7 +32,7 @@ exports.verifyToken = async (req, res, next) => {
       next();
     } catch (error) {
       res.clearCookie('accessToken');
-      res.clearCookie('refreshToken');
+      res.clearCookie('refreshToken', { path: '/users/me/refresh' });
       return res.status(401).send({ message: 'Invalid token. Please log in again.' });
     }
   };
