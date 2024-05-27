@@ -5,7 +5,7 @@ const app = express();
 const { notFoundHandler }  = require('./middlewares/errorHandlers')
 // Define CORS options
 const corsOptions = {
-    origin: ['http://localhost:3000'], // Allow requests from this origin
+    origin: ['http://localhost:3360'], // Allow requests from this origin
     methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allow these HTTP methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allow these headers
   };
@@ -13,7 +13,6 @@ const corsOptions = {
 const port = process.env.PORT; // use environment variables
 const host = process.env.HOST;
 app.use(cors(corsOptions)); //enable ALL CORS requests (client requests from other domain)
-app.use(cors())
 app.use(express.json()); //enable parsing JSON body data
 // root route -- /api/
 app.get('/', function (req, res) {
