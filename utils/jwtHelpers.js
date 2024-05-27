@@ -10,12 +10,14 @@ async function verifyTokenHelper(token) {
     return new Promise((resolve, reject) => {
         jwt.verify(token, config.secret, (err, decoded) => {
             if (err) {
-                if (err.name === 'TokenExpiredError') {
+/*                 if (err.name === 'TokenExpiredError') {
                     const decodedPayload = jwt.decode(token, { complete: true }); // complete: true to include the header and payload in the decoded payload object
                     reject({ ...err, decodedPayload });  // Include decoded payload in rejection
                 } else {
                     reject(err);
-                }
+                } */
+                reject(err);
+                console.log('Error verifying token:', err);	
             } else {
                 resolve(decoded);
             }
