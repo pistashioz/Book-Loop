@@ -1,5 +1,3 @@
-const { validate } = require("node-cron");
-
 module.exports = (sequelize, DataTypes) => {
     const Block = sequelize.define('Block', {
         blockerUserId: {

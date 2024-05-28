@@ -14,7 +14,7 @@ router.use((req, res, next) => {
     next();
 });
 
-///////////////////// PRECISA DE REVISÃO
+///////////////////// PRECISA DE REVISÃO - Like a post request to create the connection on bookGenre
 
 router.route('/')
     .post(verifyToken, isAdmin, genreController.createGenre)
@@ -24,7 +24,6 @@ router.route('/:genreId')
     .get(genreController.findGenre)
     .patch(verifyToken, isAdmin, genreController.updateGenre)
     .delete(verifyToken, isAdmin, genreController.deleteGenre);
-
 
 
 // Handle unsupported routes

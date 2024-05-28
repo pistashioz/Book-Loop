@@ -3,15 +3,15 @@ const db = require('../models');
 const jwt = require('jsonwebtoken');
 const config = require('../config/auth.config');
 const dayjs = require('dayjs');
-const { Op, ValidationError, where } = require('sequelize');
+const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
-const MAX_ENTRIES_PER_TYPE = 3;
-const MAX_SEARCH_ENTRIES =2;
+const MAX_ENTRIES_PER_TYPE = 30;
+const MAX_SEARCH_ENTRIES = 10;
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
@@ -354,7 +354,7 @@ try {
     }
 };
     
-// Update a user
+/* // Update a user
 exports.update = async (req, res) => {
 const { id } = req.params;
 try {
@@ -390,8 +390,9 @@ exports.delete = async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: "Error deleting user", error: error.message });
     }
-};
+}; */
     
+
 // Helper function to create a token entry in the token table
 async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false) {
     const t = await db.sequelize.transaction();
@@ -417,21 +418,23 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 }
 
 // Helper function to set cookies for refresh token and access token
-function setTokenCookies(res, accessToken, accessTokenExpiry, refreshToken, refreshTokenExpiry) {
+function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) {
+    const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('accessToken', accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        expires: accessTokenExpiry,
-        sameSite: 'Strict'
+        secure: isProduction,
+        expires: accessTokenCookieExpiry,
+        sameSite: isProduction ? 'None' : 'Strict'
     });
     res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        expires: refreshTokenExpiry,
-        path: '/users/me/refresh',
-        sameSite: 'Strict'
+        secure: isProduction,
+        expires: refreshTokenCookieExpiry,
+        sameSite: isProduction ? 'None' : 'Strict',
+        path: '/users/me/refresh'
     });
 }
+
 
 // Login action for user
 exports.login = async (req, res) => {
@@ -458,7 +461,6 @@ exports.login = async (req, res) => {
             });
         }
         
-        
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
             await t.rollback();
@@ -481,13 +483,12 @@ exports.login = async (req, res) => {
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
         
-        const { token: accessToken, expires: accessTokenExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
-        const { refreshToken, expires: refreshTokenExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
+        const { token: accessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
+        const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
         
         createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
         
-        setTokenCookies(res, accessToken, accessTokenExpires, refreshToken, refreshTokenExpires);
-        
+        setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
         
         // Reactivate the account if requested
         if (reactivate) {
@@ -512,40 +513,48 @@ exports.login = async (req, res) => {
     }
 };
 
-// Function to refresh tokens (to be called by a dedicated refresh endpoint)
+/**
+ * Function to refresh tokens (to be called by a dedicated refresh endpoint)
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} JSON response with success status or an error message
+ */
 exports.refreshTokens = async (req, res) => {
-    const refreshToken = req.cookies['refreshToken'];
+    const refreshToken = req.cookies.refreshToken;
 
     if (!refreshToken) {
-        return res.status(403).send("Session invalid, please log in again.");
+        return res.status(403).json({ message: "Session invalid, please log in again.", redirectTo: '/login' });
     }
 
     try {
         const existingToken = await Token.findOne({
             where: { tokenKey: refreshToken, tokenType: 'refresh' }
         });
+
         if (!existingToken || existingToken.expiresAt < new Date() || existingToken.invalidated) {
             if (existingToken) {
                 await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken } });
             }
-            return res.status(403).send("Token expired or invalidated, please log in again.");
+            return res.status(401).json({ message: "Token expired or invalidated, please log in again.", redirectTo: '/login' });
         }
 
         const { id, session } = jwt.verify(refreshToken, config.secret);
 
-        const { token: newAccessToken, expires: accessTokenExpires } = issueAccessToken(id, session);
-        const { refreshToken: newRefreshToken, expires: refreshTokenExpires } = handleRefreshToken(id, session);
+        const { token: newAccessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(id, session);
+        const { refreshToken: newRefreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(id, session);
 
-        createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
+        await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
 
-        setTokenCookies(res, newAccessToken, accessTokenExpires, newRefreshToken, refreshTokenExpires);
+        setTokenCookies(res, newAccessToken, accessTokenExpires, accessTokenCookieExpires, newRefreshToken, refreshTokenExpires, refreshTokenCookieExpires);
 
         res.status(200).json({ success: true });
     } catch (error) {
         console.error("Failed to refresh tokens:", error);
-        res.status(403).send({ message: "Failed to refresh tokens. Please log in again." });
+        res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
     }
 };
+
 
 
 // Log out action for user
@@ -587,18 +596,20 @@ exports.logout = async (req, res) => {
         //     transaction: t
         // });
         
-        // Clear the access token cookie
-        res.clearCookie('accessToken')
-        
+        // Clear token cookies
+        res.clearCookie('accessToken');
+        res.clearCookie('refreshToken', { path: '/users/me/refresh' }); // Specify the path to match the cookie
+
         await t.commit();
         
-        res.status(200).json({ message: "Logout successful.", logout: true});
+        res.status(200).json({ message: "Logout successful.", logout: true });
     } catch (error) {
         console.error("Failed operation: ", error);
         await t.rollback();
         res.status(500).json({ message: "Error during logout", error: error.message });
     }
 };
+
 
 // Controller to handle account deactivation
 exports.deactivateAccount = async (req, res) => {
@@ -684,20 +695,6 @@ exports.initiateAccountDeletion = async (req, res) => {
     }
 };
 
-
-    
-// Session validation to verify active user sessions
-exports.validateSession = (req, res) => {
-    // This callback only runs if verifyToken calls next(), meaning the token is valid
-    res.status(200).json({
-        message: "Session is valid.",
-        user: {
-            id: req.userId,  
-            username: req.username // I think we might need to fetch the username from the database here, cb the middleware is not adding it to the request!
-        }
-    });
-};
-
 // Update or create a user address and corresponding postal code
 exports.updateUserAddress = async (req, res) => {
     const userId = req.userId;  // from middleware
@@ -769,6 +766,20 @@ exports.updateUserAddress = async (req, res) => {
         return res.status(500).json({ message: "Error updating user address", error: error.message });
     }
 };
+    
+// Session validation to verify active user sessions
+exports.validateSession = (req, res) => {
+    // This callback only runs if verifyToken calls next(), meaning the token is valid
+    res.status(200).json({
+        message: "Session is valid.",
+        user: {
+            id: req.userId,  
+            username: req.username // I think we might need to fetch the username from the database here, cb the middleware is not adding it to the request!
+        }
+    });
+};
+
+
        
 // Get user settings accordingly to query params
 exports.getUserSettings = async (req, res) => {
@@ -988,10 +999,7 @@ async function fetchPrivacySettings(userId) {
     }
 }
 
-
-
 /////
-
 
 // Update user settings based on type
 exports.updateUserSettings = async (req, res) => {
@@ -1259,7 +1267,6 @@ async function updatePrivacySettings(userId, settings) {
     }
 }
 
-
 // Follow another user
 exports.followUser = async (req, res) => {
     const { targetUserId } = req.body;
@@ -1336,17 +1343,7 @@ exports.removeFollower = async (req, res) => {
     }
 };
 
-/**
- * Lists the users that the specified user is following.
- *
- * @param {object} req - The request object
- * @param {object} res - The response object
- *
- * @returns {Promise<void>}
- *
- * @throws Will throw an error if the user's following list is private.
- * @throws Will throw an error if there is an issue retrieving the following list.
- */
+// Lists the users that the specified user is following.
 exports.listFollowing = async (req, res) => {
     const { id } = req.params;
 
@@ -1479,17 +1476,23 @@ exports.listBlockedUsers = async (req, res) => {
     }
 };
 
-// Create a new navigation history entry
+/**
+* Create a new navigation history entry
+* 
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<void>} JSON response with success status or an error message
+*/
 exports.createEntry = async (req, res) => {
     try {
         const { entityTypeId, elementId, searchTerm, visitDuration, actionType } = req.body;
         const userId = req.userId;
-
+        
         // Validate entityTypeId and elementId
         if (entityTypeId === 1) {
             const user = await User.findByPk(elementId);
             if (!user) {
-                return res.status(400).json({ message: 'User does not exist.' });
+                return res.status(404).json({ message: 'User does not exist.' });
             }
             if (elementId === userId) {
                 return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own profile.' });
@@ -1497,7 +1500,7 @@ exports.createEntry = async (req, res) => {
         } else if (entityTypeId === 2) {
             const listing = await Listing.findByPk(elementId);
             if (!listing) {
-                return res.status(400).json({ message: 'Listing does not exist.' });
+                return res.status(404).json({ message: 'Listing does not exist.' });
             }
             if (listing.sellerUserId === userId) {
                 return res.status(400).json({ message: 'Cannot create navigation history entry for viewing own listing.' });
@@ -1505,10 +1508,10 @@ exports.createEntry = async (req, res) => {
         } else if (entityTypeId === 3) {
             const bookEdition = await BookEdition.findByPk(elementId);
             if (!bookEdition) {
-                return res.status(400).json({ message: 'Book edition does not exist.' });
+                return res.status(404).json({ message: 'Book edition does not exist.' });
             }
         }
-
+        
         // Check if an entry with the same entityTypeId and elementId already exists
         let existingEntry;
         if (entityTypeId) {
@@ -1527,7 +1530,7 @@ exports.createEntry = async (req, res) => {
                 }
             });
         }
-
+        
         if (existingEntry) {
             // Update the existing entry's dateTime and visitDuration
             existingEntry.dateTime = new Date();
@@ -1541,7 +1544,7 @@ exports.createEntry = async (req, res) => {
                     entityTypeId: entityTypeId ? entityTypeId : { [Op.is]: null }
                 }
             });
-
+            
             // Delete older entries if the limit is exceeded
             if (count >= (entityTypeId ? MAX_ENTRIES_PER_TYPE : MAX_SEARCH_ENTRIES)) {
                 const oldestEntries = await NavigationHistory.findAll({
@@ -1554,7 +1557,7 @@ exports.createEntry = async (req, res) => {
                 });
                 await NavigationHistory.destroy({ where: { historyId: oldestEntries.map(entry => entry.historyId) } });
             }
-
+            
             // Create new entry
             await NavigationHistory.create({
                 userId,
@@ -1566,7 +1569,7 @@ exports.createEntry = async (req, res) => {
                 actionType
             });
         }
-
+        
         res.status(201).send(); // No need to return the entry
     } catch (error) {
         console.error("Detailed error: ", error);
@@ -1580,16 +1583,15 @@ exports.createEntry = async (req, res) => {
     }
 };
 
-
 // Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {
     try {
         const { type, page = 1, limit = 10 } = req.query;
         const offset = (page - 1) * limit;
         const userId = req.userId;
-
+        
         let whereClause = { userId };
-
+        
         if (type) {
             if (type === 'search') {
                 // Fetch search term entries
@@ -1610,7 +1612,7 @@ exports.getEntries = async (req, res) => {
             }
             whereClause.entityTypeId = entityType.entityTypeId;
         }
-
+        
         const { rows: entries, count: totalCount } = await NavigationHistory.findAndCountAll({
             where: whereClause,
             include: [{ model: EntityType, attributes: ['entityTypeName'] }],
@@ -1618,11 +1620,11 @@ exports.getEntries = async (req, res) => {
             limit: type === 'search' ? 5 : limit,
             offset
         });
-
+        
         // Retrieve additional details based on the entityType
         const detailedEntries = await Promise.all(entries.map(async (entry) => {
             let details = null;
-
+            
             if (entry.entityTypeId === 1) { // User
                 details = await User.findOne({
                     where: { userId: entry.elementId },
@@ -1656,7 +1658,7 @@ exports.getEntries = async (req, res) => {
                     ],
                     group: ['Listing.listingId']
                 });
-
+                
                 if (listing) {
                     details = {
                         listingId: listing.listingId,
@@ -1696,15 +1698,15 @@ exports.getEntries = async (req, res) => {
                     searchTerm: entry.searchTerm
                 };
             }
-
+            
             return {
                 historyId: entry.historyId,
                 details
             };
         }));
-
+        
         const totalPages = Math.ceil(totalCount / limit);
-
+        
         res.status(200).json({
             currentPage: parseInt(page, 10),
             totalPages,
@@ -1743,6 +1745,14 @@ exports.deleteEntries = async (req, res) => {
     }
 };
 
+
+
+
+
+
+
+
+
 // Get user's favorite genres
 exports.getFavoriteGenres = async (req, res) => {
     try {
@@ -1757,7 +1767,6 @@ exports.getFavoriteGenres = async (req, res) => {
         res.status(500).json({ message: 'Error fetching favorite genres', error: error.message });
     }
 };
-
 
 // Add a favorite genre
 exports.addFavoriteGenre = async (req, res) => {
@@ -1812,7 +1821,6 @@ exports.removeFavoriteGenre = async (req, res) => {
     }
 };
 
-
 // Get user's favorite authors
 exports.getFavoriteAuthors = async (req, res) => {
     try {
@@ -1859,7 +1867,6 @@ exports.addFavoriteAuthor = async (req, res) => {
         res.status(500).json({ message: 'Error adding favorite author', error: error.message });
     }
 };
-
 
 // Remove a favorite author
 exports.removeFavoriteAuthor = async (req, res) => {

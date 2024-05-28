@@ -10,11 +10,16 @@ require('dotenv').config(); // Load environment variables from .env file at the 
 const app = express();
 
 // Configure host and port from environment variables or use defaults
-const HOST = process.env.HOST || '127.0.0.1';
-const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "localhost";
+const PORT = process.env.PORT || 3360;
 
-// Enable CORS for all routes
-app.use(cors());
+const corsOptions = {
+  origin: 'http://localhost:3000',
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+
 
 // Middleware to parse JSON body data in incoming requests
 app.use(express.json());
