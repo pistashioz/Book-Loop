@@ -112,7 +112,7 @@ exports.findAll = async (req, res) => {
 
 
 /**
- * Create a new work along with an optional initial book edition.
+ * Create a new work.
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -121,22 +121,15 @@ exports.findAll = async (req, res) => {
 exports.create = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
-        const { originalTitle, firstPublishedDate, series = {}, seriesOrder = null, authors = [], genres = [], edition = null } = req.body;
+        const { originalTitle, firstPublishedDate, series = {}, seriesOrder = null } = req.body;
 
         // Check for duplicate work using title and firstPublishedDate
         const existingWork = await Work.findOne({
-            where: { originalTitle, firstPublishedDate },
-            include: [{
-                model: BookAuthor,
-                include: [{
-                    model: Person,
-                    where: { personName: { [Op.in]: authors } }
-                }]
-            }]
+            where: { originalTitle, firstPublishedDate }
         });
 
         if (existingWork) {
-            return res.status(400).json({ success: false, message: 'Work already exists with the same title, publication date, and author.' });
+            return res.status(400).json({ success: false, message: 'Work already exists with the same title and publication date.' });
         }
 
         // Check and prompt for series creation if needed
@@ -153,6 +146,51 @@ exports.create = async (req, res) => {
             seriesId = existingSeries.seriesId;
         }
 
+        // Create new work
+        const newWork = await Work.create({ originalTitle, firstPublishedDate, seriesId, seriesOrder }, { transaction: t });
+
+        await t.commit();
+
+        res.status(201).json({
+            success: true,
+            message: 'New work created successfully',
+            work: newWork,
+            links: [
+                { rel: "self", href: `/works/${newWork.workId}`, method: "GET" },
+                { rel: "delete", href: `/works/${newWork.workId}`, method: "DELETE" },
+                { rel: "modify", href: `/works/${newWork.workId}`, method: "PUT" },
+            ]
+        });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error creating work:", err);
+        if (err instanceof ValidationError) {
+            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+        } else {
+            res.status(500).json({ success: false, message: err.message || "Some error occurred while creating the work." });
+        }
+    }
+};
+
+/**
+ * Add an author to a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.addAuthor = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId } = req.params;
+        const { authors } = req.body;
+
+        // Check if work exists
+        const work = await Work.findByPk(workId);
+        if (!work) {
+            return res.status(404).json({ success: false, message: 'Work not found.' });
+        }
+
         // Check and prompt for author creation if needed
         for (const authorName of authors) {
             const existingAuthor = await Person.findOne({ where: { personName: authorName } });
@@ -163,6 +201,68 @@ exports.create = async (req, res) => {
                     links: [{ rel: 'create-author', href: '/authors', method: 'POST' }]
                 });
             }
+            await BookAuthor.create({ workId: work.workId, personId: existingAuthor.personId }, { transaction: t });
+        }
+
+        await t.commit();
+
+        res.status(201).json({ success: true, message: 'Authors added to work successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error adding authors to work:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while adding authors to the work." });
+    }
+};
+
+/**
+ * Remove an author from a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.removeAuthor = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId } = req.params;
+        const { authorId } = req.body;
+
+        // Check if work exists
+        const work = await Work.findByPk(workId);
+        if (!work) {
+            return res.status(404).json({ success: false, message: 'Work not found.' });
+        }
+
+        // Remove author association
+        await BookAuthor.destroy({ where: { workId, personId: authorId }, transaction: t });
+
+        await t.commit();
+
+        res.status(200).json({ success: true, message: 'Author removed from work successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error removing author from work:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the author from the work." });
+    }
+};
+
+/**
+ * Add a genre to a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.addGenre = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId } = req.params;
+        const { genres } = req.body;
+
+        // Check if work exists
+        const work = await Work.findByPk(workId);
+        if (!work) {
+            return res.status(404).json({ success: false, message: 'Work not found.' });
         }
 
         // Check and prompt for genre creation if needed
@@ -175,62 +275,48 @@ exports.create = async (req, res) => {
                     links: [{ rel: 'create-genre', href: '/book-genres', method: 'POST' }]
                 });
             }
-        }
-
-        // Create new work
-        const newWork = await Work.create({ originalTitle, firstPublishedDate, seriesId, seriesOrder }, { transaction: t });
-
-        // Associate authors
-        for (const authorName of authors) {
-            const author = await Person.findOne({ where: { personName: authorName } });
-            await BookAuthor.create({ workId: newWork.workId, personId: author.personId }, { transaction: t });
-        }
-
-        // Associate genres
-        for (const genreName of genres) {
-            const genre = await Genre.findOne({ where: { genreName } });
-            await BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
-        }
-
-        // Create initial book edition if provided
-        if (edition) {
-            const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = edition;
-
-            // Find or create the publisher
-            const publisher = await Publisher.findOne({ where: { publisherName } });
-            if (!publisher) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Publisher does not exist.',
-                    links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
-                });
-            }
-
-            await BookEdition.create({
-                ISBN, workId: newWork.workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
-            }, { transaction: t });
+            await BookGenre.create({ workId: work.workId, genreId: existingGenre.genreId }, { transaction: t });
         }
 
         await t.commit();
 
-        res.status(201).json({
-            success: true,
-            message: 'New work and its initial book edition created successfully',
-            work: newWork,
-            links: [
-                { rel: "self", href: `/works/${newWork.workId}`, method: "GET" },
-                { rel: "delete", href: `/works/${newWork.workId}`, method: "DELETE" },
-                { rel: "modify", href: `/works/${newWork.workId}`, method: "PUT" },
-            ]
-        });
+        res.status(201).json({ success: true, message: 'Genres added to work successfully.' });
     } catch (err) {
         await t.rollback();
-        console.error("Error creating work and its edition:", err);
-        if (err instanceof ValidationError) {
-            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
-        } else {
-            res.status(500).json({ success: false, message: err.message || "Some error occurred while creating the work." });
+        console.error("Error adding genres to work:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while adding genres to the work." });
+    }
+};
+
+/**
+ * Remove a genre from a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.removeGenre = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId } = req.params;
+        const { genreId } = req.body;
+
+        // Check if work exists
+        const work = await Work.findByPk(workId);
+        if (!work) {
+            return res.status(404).json({ success: false, message: 'Work not found.' });
         }
+
+        // Remove genre association
+        await BookGenre.destroy({ where: { workId, genreId }, transaction: t });
+
+        await t.commit();
+
+        res.status(200).json({ success: true, message: 'Genre removed from work successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error removing genre from work:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the genre from the work." });
     }
 };
 

@@ -62,6 +62,15 @@ router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
     .post(verifyToken, workController.likeComment)
     .delete(verifyToken, workController.removeLikeComment);
 
+    // Routes to handle operations on authors and genres of a specific work by ID
+router.route('/:workId/authors')
+.post(verifyToken, isAdmin, workController.addAuthor)
+.delete(verifyToken, isAdmin, workController.removeAuthor);
+
+router.route('/:workId/genres')
+.post(verifyToken, isAdmin, workController.addGenre)
+.delete(verifyToken, isAdmin, workController.removeGenre);
+
 // Handle unsupported routes
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested work resource could not be found. Please check the URL and API documentation.' });
