@@ -420,12 +420,16 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 // Helper function to set cookies for refresh token and access token
 function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) {
     const isProduction = process.env.NODE_ENV === 'production';
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken', { path: '/users/me/refresh' });
+
     res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: isProduction,
         expires: accessTokenCookieExpiry,
         sameSite: isProduction ? 'None' : 'Strict'
     });
+
     res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: isProduction,
@@ -433,7 +437,10 @@ function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken
         sameSite: isProduction ? 'None' : 'Strict',
         path: '/users/me/refresh'
     });
+
+    console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
+
 
 
 // Login action for user
@@ -470,9 +477,17 @@ exports.login = async (req, res) => {
             where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
             transaction: t
         });
+
+        // Invalidate existing session if found
         if (existingSession) {
-            await t.rollback();
-            return res.status(409).json({ message: "Active session already exists for this device and browser." });
+            await SessionLog.update(
+                { endTime: new Date() },
+                { where: { sessionId: existingSession.sessionId }, transaction: t }
+            );
+            await Token.update(
+                { invalidated: true, lastUsedAt: new Date() },
+                { where: { sessionId: existingSession.sessionId, invalidated: false }, transaction: t }
+            );
         }
         
         const sessionLog = await SessionLog.create({
@@ -512,47 +527,50 @@ exports.login = async (req, res) => {
     }
 };
 
-/**
- * Function to refresh tokens (to be called by a dedicated refresh endpoint)
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>} JSON response with success status or an error message
- */
+// Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
-
+    console.log(`Received refreshToken: ${refreshToken}`);
+    
     if (!refreshToken) {
-        return res.status(403).json({ message: "Session invalid, please log in again.", redirectTo: '/login' });
+        return res.status(403).json({ message: "No refresh token found. Please log in again.", redirectTo: '/login' }); 
     }
 
     try {
+        console.log(`Attempting to refresh tokens for user with refreshToken: ${refreshToken}`);
         const existingToken = await Token.findOne({
             where: { tokenKey: refreshToken, tokenType: 'refresh' }
         });
-
+        
+        console.log('Existing token found:', existingToken);
+        
         if (!existingToken || existingToken.expiresAt < new Date() || existingToken.invalidated) {
             if (existingToken) {
                 await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken } });
+                console.log('Existing token invalidated due to expiration or invalidation.');
             }
             return res.status(401).json({ message: "Token expired or invalidated, please log in again.", redirectTo: '/login' });
         }
 
         const { id, session } = jwt.verify(refreshToken, config.secret);
+        console.log(`Verified JWT. User ID: ${id}, Session ID: ${session}`);
 
         const { token: newAccessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(id, session);
         const { refreshToken: newRefreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(id, session);
 
         await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
+        console.log('New tokens issued and database updated.');
 
-        setTokenCookies(res, newAccessToken, accessTokenExpires, accessTokenCookieExpires, newRefreshToken, refreshTokenExpires, refreshTokenCookieExpires);
+        setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
 
-        res.status(200).json({ success: true });
+        return res.status(200).json({ success: true });
     } catch (error) {
         console.error("Failed to refresh tokens:", error);
-        res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
+        return res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
     }
 };
+
+
 
 
 
