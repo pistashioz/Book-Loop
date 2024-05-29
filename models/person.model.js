@@ -11,13 +11,6 @@ module.exports = (sequelize, DataTypes) => {
             validate: {
                 notNull: { msg: "Person Name cannot be empty!" }
             }
-        },
-        roles: {
-            type: DataTypes.ENUM('author', 'translator', 'narrator'),
-            allowNull: false,
-            validate: {
-                notNull: { msg: "Role cannot be empty!" }
-            }
         }
     }, {
         timestamps: false,

@@ -112,7 +112,7 @@ exports.findAll = async (req, res) => {
 
 
 /**
- * Create a new work.
+ * Create a new work along with an optional initial book edition.
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -121,15 +121,22 @@ exports.findAll = async (req, res) => {
 exports.create = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
-        const { originalTitle, firstPublishedDate, series = {}, seriesOrder = null } = req.body;
+        const { originalTitle, firstPublishedDate, series = {}, seriesOrder = null, authors = [], genres = [], edition = null } = req.body;
 
         // Check for duplicate work using title and firstPublishedDate
         const existingWork = await Work.findOne({
-            where: { originalTitle, firstPublishedDate }
+            where: { originalTitle, firstPublishedDate },
+            include: [{
+                model: BookAuthor,
+                include: [{
+                    model: Person,
+                    where: { personName: { [Op.in]: authors } }
+                }]
+            }]
         });
 
         if (existingWork) {
-            return res.status(400).json({ success: false, message: 'Work already exists with the same title and publication date.' });
+            return res.status(400).json({ success: false, message: 'Work already exists with the same title, publication date, and author.' });
         }
 
         // Check and prompt for series creation if needed
@@ -146,14 +153,69 @@ exports.create = async (req, res) => {
             seriesId = existingSeries.seriesId;
         }
 
+        // Check and prompt for author creation if needed
+        for (const authorName of authors) {
+            const existingAuthor = await Person.findOne({ where: { personName: authorName } });
+            if (!existingAuthor) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Author "${authorName}" does not exist.`,
+                    links: [{ rel: 'create-author', href: '/authors', method: 'POST' }]
+                });
+            }
+        }
+
+        // Check and prompt for genre creation if needed
+        for (const genreName of genres) {
+            const existingGenre = await Genre.findOne({ where: { genreName } });
+            if (!existingGenre) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Genre "${genreName}" does not exist.`,
+                    links: [{ rel: 'create-genre', href: '/book-genres', method: 'POST' }]
+                });
+            }
+        }
+
         // Create new work
         const newWork = await Work.create({ originalTitle, firstPublishedDate, seriesId, seriesOrder }, { transaction: t });
+
+        // Associate authors
+        for (const authorName of authors) {
+            const author = await Person.findOne({ where: { personName: authorName } });
+            await BookAuthor.create({ workId: newWork.workId, personId: author.personId }, { transaction: t });
+        }
+
+        // Associate genres
+        for (const genreName of genres) {
+            const genre = await Genre.findOne({ where: { genreName } });
+            await BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
+        }
+
+        // Create initial book edition if provided
+        if (edition) {
+            const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = edition;
+
+            // Find or create the publisher
+            const publisher = await Publisher.findOne({ where: { publisherName } });
+            if (!publisher) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Publisher does not exist.',
+                    links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
+                });
+            }
+
+            await BookEdition.create({
+                ISBN, workId: newWork.workId, publisherId: publisher.publisherId, title, synopsis, editionType, newWork.workId,  language, pageNumber, coverImage
+            }, { transaction: t });
+        }
 
         await t.commit();
 
         res.status(201).json({
             success: true,
-            message: 'New work created successfully',
+            message: 'New work and its initial book edition created successfully',
             work: newWork,
             links: [
                 { rel: "self", href: `/works/${newWork.workId}`, method: "GET" },
@@ -163,7 +225,7 @@ exports.create = async (req, res) => {
         });
     } catch (err) {
         await t.rollback();
-        console.error("Error creating work:", err);
+        console.error("Error creating work and its edition:", err);
         if (err instanceof ValidationError) {
             res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {

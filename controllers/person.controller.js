@@ -1,8 +1,6 @@
 const db = require('../models');
-const {Person, Work, BookAuthor, BookEdition, BookContributor, LiteraryReview, BookInSeries} = db;
-const { ValidationError, Op, fn, col } = require('sequelize'); // necessary for model validations using sequelize
-
-
+const { Person, Work, BookAuthor, BookEdition, BookContributor, LiteraryReview, BookInSeries, Role, PersonRole } = db;
+const { ValidationError, Op, fn, col } = require('sequelize');
 
 /**
  * Retrieve all persons with pagination and role filtering.
@@ -18,9 +16,15 @@ exports.findAll = async (req, res) => {
         const offset = (page - 1) * limit;
         const { role } = req.query;
 
-        const where = {};
+        let where = {};
         if (role) {
-            where.roles = { [Op.contains]: [role] };
+            const roleData = await Role.findOne({ where: { roleName: role } });
+            if (roleData) {
+                const personIds = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'] });
+                where = { personId: { [Op.in]: personIds.map(pr => pr.personId) } };
+            } else {
+                where = { personId: -1 }; // No such role, return empty result
+            }
         }
 
         const { count, rows: persons } = await Person.findAndCountAll({
@@ -33,37 +37,27 @@ exports.findAll = async (req, res) => {
 
         // Fetch detailed counts for each person
         const detailedPersons = await Promise.all(persons.map(async person => {
-            const worksCountQuery = `
-                SELECT COUNT(*) as worksCount
-                FROM bookAuthor
-                WHERE personId = ${person.personId}
-            `;
-            const [worksCountResult] = await db.sequelize.query(worksCountQuery);
-            const worksCount = worksCountResult[0].worksCount;
+            const worksCount = await BookAuthor.count({ where: { personId: person.personId } });
+            const audiobookCount = await BookContributor.count({
+                where: {
+                    personId: person.personId,
+                    editionISBN: { [Op.in]: (await BookEdition.findAll({ where: { editionType: 'Audiobook' }, attributes: ['ISBN'] })).map(be => be.ISBN) }
+                }
+            });
+            const translationCount = await BookContributor.count({
+                where: {
+                    personId: person.personId,
+                    editionISBN: { [Op.in]: (await BookEdition.findAll({ where: { editionType: { [Op.ne]: 'Audiobook' } }, attributes: ['ISBN'] })).map(be => be.ISBN) }
+                }
+            });
 
-            const audiobookCountQuery = `
-                SELECT COUNT(*) as audiobookCount
-                FROM bookContributor
-                JOIN bookEdition ON bookContributor.editionISBN = bookEdition.ISBN
-                WHERE personId = ${person.personId} AND editionType = 'Audiobook'
-            `;
-            const [audiobookCountResult] = await db.sequelize.query(audiobookCountQuery);
-            const audiobookCount = audiobookCountResult[0].audiobookCount;
-
-            const translationCountQuery = `
-                SELECT COUNT(*) as translationCount
-                FROM bookContributor
-                JOIN bookEdition ON bookContributor.editionISBN = bookEdition.ISBN
-                WHERE personId = ${person.personId} AND editionType != 'Audiobook'
-            `;
-            const [translationCountResult] = await db.sequelize.query(translationCountQuery);
-            const translationCount = translationCountResult[0].translationCount;
-
+            const roles = await PersonRole.findAll({ where: { personId: person.personId }, include: Role });
             return {
                 ...person.toJSON(),
                 worksCount,
                 audiobookCount,
-                translationCount
+                translationCount,
+                roles: roles.map(r => r.Role.roleName)
             };
         }));
 
@@ -80,7 +74,6 @@ exports.findAll = async (req, res) => {
     }
 };
 
-
 /**
  * Create a new person.
  * 
@@ -89,19 +82,18 @@ exports.findAll = async (req, res) => {
  * @returns {Promise<Object>} JSON response with success status and message
  */
 exports.create = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
         const { personName, roles } = req.body;
-        const validRoles = ['author', 'translator', 'narrator'];
 
-        // Ensure roles are valid
+        // Ensure roles are valid and exist
         if (!roles || !Array.isArray(roles) || roles.length === 0) {
             return res.status(400).json({ success: false, message: 'Roles are required and should be a non-empty array.' });
         }
-        
-        for (const role of roles) {
-            if (!validRoles.includes(role)) {
-                return res.status(400).json({ success: false, message: `Invalid role: ${role}. Valid roles are: ${validRoles.join(', ')}.` });
-            }
+
+        const validRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
+        if (validRoles.length !== roles.length) {
+            return res.status(400).json({ success: false, message: `Some roles are invalid.` });
         }
 
         // Check if person already exists
@@ -110,13 +102,23 @@ exports.create = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Person with this name already exists.' });
         }
 
-        const newPerson = await Person.create({ personName, roles });
+        // Create new person
+        const newPerson = await Person.create({ personName }, { transaction: t });
+
+        // Create person-role associations
+        for (const role of validRoles) {
+            await PersonRole.create({ personId: newPerson.personId, roleId: role.roleId }, { transaction: t });
+        }
+
+        await t.commit();
+
         res.status(201).json({
             success: true,
             message: 'New Person created',
             URL: `/persons/${newPerson.personId}`
         });
     } catch (err) {
+        await t.rollback();
         if (err instanceof ValidationError) {
             return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {
@@ -127,6 +129,112 @@ exports.create = async (req, res) => {
     }
 };
 
+/**
+ * Retrieve all available roles.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
+exports.getAllRoles = async (req, res) => {
+    try {
+        const roles = await Role.findAll({
+            attributes: ['roleId', 'roleName']
+        });
+        res.status(200).json({ success: true, roles });
+    } catch (error) {
+        console.error("Error fetching roles:", error);
+        res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching roles" });
+    }
+};
+
+/**
+ * Add a role to a person.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.addRole = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { personId } = req.params;
+        const { role } = req.body;
+
+        // Ensure role is valid and exists
+        const validRole = await Role.findOne({ where: { roleName: role }, transaction: t });
+        if (!validRole) {
+            return res.status(400).json({ success: false, message: `Invalid role: ${role}.` });
+        }
+
+        // Check if person exists
+        const person = await Person.findByPk(personId, { transaction: t });
+        if (!person) {
+            return res.status(404).json({ success: false, message: 'Person not found.' });
+        }
+
+        // Check if role association already exists
+        const existingAssociation = await PersonRole.findOne({ where: { personId, roleId: validRole.roleId }, transaction: t });
+        if (existingAssociation) {
+            return res.status(400).json({ success: false, message: 'Role already associated with this person.' });
+        }
+
+        // Create person-role association
+        await PersonRole.create({ personId, roleId: validRole.roleId }, { transaction: t });
+
+        await t.commit();
+
+        res.status(201).json({ success: true, message: 'Role added to person successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error adding role to person:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the role to the person." });
+    }
+};
+
+/**
+ * Remove a role from a person.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.removeRole = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { personId } = req.params;
+        const { role } = req.body;
+
+        // Ensure role is valid and exists
+        const validRole = await Role.findOne({ where: { roleName: role }, transaction: t });
+        if (!validRole) {
+            return res.status(400).json({ success: false, message: `Invalid role: ${role}.` });
+        }
+
+        // Check if person exists
+        const person = await Person.findByPk(personId, { transaction: t });
+        if (!person) {
+            return res.status(404).json({ success: false, message: 'Person not found.' });
+        }
+
+        // Check if role association exists
+        const existingAssociation = await PersonRole.findOne({ where: { personId, roleId: validRole.roleId }, transaction: t });
+        if (!existingAssociation) {
+            return res.status(400).json({ success: false, message: 'Role not associated with this person.' });
+        }
+
+        // Remove person-role association
+        await PersonRole.destroy({ where: { personId, roleId: validRole.roleId }, transaction: t });
+
+        await t.commit();
+
+        res.status(200).json({ success: true, message: 'Role removed from person successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error removing role from person:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the role from the person." });
+    }
+};
 
 /**
  * Find a person by ID with detailed information.
@@ -196,7 +304,7 @@ exports.findPerson = async (req, res) => {
                 attributes: ['coverImage']
             });
             const editionsCount = await BookEdition.count({ where: { workId: work.workId } });
-            
+
             return {
                 workId: work.workId,
                 originalTitle: work.originalTitle,
@@ -225,12 +333,14 @@ exports.findPerson = async (req, res) => {
             };
         });
 
+        const roles = await PersonRole.findAll({ where: { personId: person.personId }, include: Role });
+
         res.status(200).json({
             success: true,
             person: {
                 personId: person.personId,
                 personName: person.personName,
-                roles: person.roles,
+                roles: roles.map(r => r.Role.roleName),
                 worksCount: works.length,
                 editionsCount: editions.length,
                 works,
@@ -248,10 +358,8 @@ exports.findPerson = async (req, res) => {
     }
 };
 
-
-
 /**
- * Update a person by ID
+ * Update a person's name by ID.
  * 
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -261,51 +369,23 @@ exports.updatePerson = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
         const { personId } = req.params;
-        const { personName, roles, works, editions } = req.body;
+        const { personName } = req.body;
 
         // Check if the person exists
-        const person = await Person.findByPk(personId);
+        const person = await Person.findByPk(personId, { transaction: t });
         if (!person) {
             await t.rollback();
             return res.status(404).json({ success: false, msg: `Person with ID ${personId} not found.` });
         }
 
-        // Update person details if provided
-        if (personName || roles) {
-            await person.update({ personName, roles }, { transaction: t });
+        // Validate personName
+        if (personName === undefined || personName === null || personName.trim() === '') {
+            await t.rollback();
+            return res.status(400).json({ success: false, msg: 'personName is required and cannot be empty.' });
         }
 
-        // Handle associations with works if provided
-        if (works) {
-            for (const workId of works) {
-                const work = await Work.findByPk(workId);
-                if (!work) {
-                    await t.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: `Work with ID ${workId} not found.`,
-                        links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
-                    });
-                }
-                await BookAuthor.create({ workId, personId }, { transaction: t });
-            }
-        }
-
-        // Handle associations with editions if provided
-        if (editions) {
-            for (const editionISBN of editions) {
-                const edition = await BookEdition.findByPk(editionISBN);
-                if (!edition) {
-                    await t.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: `Edition with ISBN ${editionISBN} not found.`,
-                        links: [{ rel: 'create-edition', href: '/editions', method: 'POST' }]
-                    });
-                }
-                await BookContributor.create({ editionISBN, personId }, { transaction: t });
-            }
-        }
+        // Update person details if valid personName is provided
+        await person.update({ personName }, { transaction: t });
 
         await t.commit();
         return res.json({ success: true, msg: `Person with ID ${personId} was updated successfully.` });
@@ -319,7 +399,6 @@ exports.updatePerson = async (req, res) => {
         }
     }
 };
-
 
 
 /**

@@ -25,6 +25,13 @@ router.route('/:personId')
     .patch(verifyToken, isAdmin, personController.updatePerson)
     .delete(verifyToken, isAdmin, personController.removePerson);
 
+router.route('/:personId/roles')
+.post(verifyToken, isAdmin, personController.addRole)
+.delete(verifyToken, isAdmin, personController.removeRole);
+
+router.route('/roles')
+.get(personController.getAllRoles);
+
 // Handle unsupported routes
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested author resource could not be found. Please check the URL and API documentation.' });

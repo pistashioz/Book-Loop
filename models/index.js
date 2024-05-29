@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-    //   return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+//    return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -58,9 +58,13 @@ db.UserFavoriteGenre = require('./userFavoriteGenre.model.js')(sequelize, DataTy
 db.UserFavoriteAuthor = require('./userFavoriteAuthor.model.js')(sequelize, DataTypes);
 db.Genre = require('./genre.model.js')(sequelize, DataTypes);
 db.Person = require('./person.model.js')(sequelize, DataTypes);
+db.Role = require('./role.model.js')(sequelize, DataTypes);
+db.PersonRole = require('./personRoles.model.js')(sequelize, DataTypes);
 db.BookAuthor = require('./bookAuthor.model.js')(sequelize, DataTypes);
 db.BookGenre = require('./bookGenre.model.js')(sequelize, DataTypes);
 db.BookContributor = require('./bookContributor.model.js')(sequelize, DataTypes);
+
+
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -183,5 +187,11 @@ db.UserFavoriteAuthor.belongsTo(db.User, { foreignKey: 'userId' });
 
 db.Person.hasMany(db.UserFavoriteAuthor, { foreignKey: 'personId', onDelete: 'CASCADE' });
 db.UserFavoriteAuthor.belongsTo(db.Person, { foreignKey: 'personId' });
+
+db.Person.hasMany(db.PersonRole, { foreignKey: 'personId', onDelete: 'CASCADE' });
+db.PersonRole.belongsTo(db.Person, { foreignKey: 'personId'});
+
+db.Role.hasMany(db.PersonRole, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+db.PersonRole.belongsTo(db.Role, { foreignKey: 'roleId'});
 
 module.exports = db;
