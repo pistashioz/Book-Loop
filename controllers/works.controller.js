@@ -196,7 +196,7 @@ exports.create = async (req, res) => {
         if (edition) {
             const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = edition;
 
-            // Find or create the publisher
+            // Find the publisher
             const publisher = await Publisher.findOne({ where: { publisherName } });
             if (!publisher) {
                 return res.status(400).json({
@@ -207,7 +207,7 @@ exports.create = async (req, res) => {
             }
 
             await BookEdition.create({
-                ISBN, workId: newWork.workId, publisherId: publisher.publisherId, title, synopsis, editionType, newWork.workId,  language, pageNumber, coverImage
+                ISBN, workId: newWork.workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
             }, { transaction: t });
         }
 
@@ -233,6 +233,7 @@ exports.create = async (req, res) => {
         }
     }
 };
+
 
 /**
  * Add an author to a work.
