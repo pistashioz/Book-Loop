@@ -41,7 +41,7 @@ module.exports = (sequelize, DataTypes) => {
                 notNull: { msg: 'Password cannot be null or empty!' },
                 len: { args: [5, 60], msg: 'Password should be between 8 and 60 characters' } // Adjusted maximum length
             }
-        },        
+        },
         birthDate: {
             type: DataTypes.DATEONLY,
             allowNull: false,
@@ -86,7 +86,28 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         holidayMode: { type: DataTypes.BOOLEAN, defaultValue: false },
-        isAdmin: { type: DataTypes.BOOLEAN, defaultValue: false }
+        isAdmin: { type: DataTypes.BOOLEAN, defaultValue: false },
+        totalReviews: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        totalFollowers: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        totalFollowing: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        },
+        sellerAverageRating: {
+            type: DataTypes.DECIMAL(3, 2),
+            defaultValue: 0,
+            validate: { min: 0, max: 5 }
+        },
+        sellerReviewCount: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
+        }
     }, {
         tableName: 'user',
         timestamps: false,
@@ -98,12 +119,9 @@ module.exports = (sequelize, DataTypes) => {
                 user.password = await bcrypt.hashSync(user.password, salt);
             },
             beforeUpdate: async (user) => {
-                console.log(user.password);
                 if (user.changed('password')) {
-                    console.log('password changed');
                     const salt = await bcrypt.genSaltSync(10);
                     user.password = await bcrypt.hashSync(user.password, salt);
-                    console.log(user.password);
                 }
             }
         },
@@ -122,7 +140,6 @@ module.exports = (sequelize, DataTypes) => {
             throw new Error('User must be at least 16 years of age to register.');
         }
     }
-    
     
     // Validate the password for authentication
     User.prototype.validPassword = async function(password) {

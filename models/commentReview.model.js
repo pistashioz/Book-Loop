@@ -35,11 +35,23 @@ module.exports = (sequelize, DataTypes) => {
         creationDate: {
             type: DataTypes.DATE,
             defaultValue: DataTypes.NOW
+        },
+        totalLikes: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
         }
     }, {
         tableName: 'commentReview',
         timestamps: false,
-        freezeTableName: true
+        freezeTableName: true,
+        hooks: {
+            afterCreate: async (comment, options) => {
+                await sequelize.models.LiteraryReview.increment('totalComments', { where: { literaryReviewId: comment.literaryReviewId } });
+            },
+            afterDestroy: async (comment, options) => {
+                await sequelize.models.LiteraryReview.decrement('totalComments', { where: { literaryReviewId: comment.literaryReviewId } });
+            }
+        }
     });
 
     return CommentReview;

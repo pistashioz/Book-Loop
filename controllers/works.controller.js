@@ -1330,6 +1330,8 @@ exports.removeBookEdition = async (req, res) => {
     }
 };
 
+
+// Get reviews for a specific work by ID
 // Get reviews for a specific work by ID
 exports.getReviews = async (req, res) => {
     try {
@@ -1347,7 +1349,7 @@ exports.getReviews = async (req, res) => {
                 'literaryReviewId',
                 'literaryReview',
                 'creationDate',
-                [db.sequelize.literal('(SELECT COUNT(*) FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId)'), 'likeCount'],
+                'totalLikes',
                 [db.sequelize.literal('(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)'), 'commentCount']
             ],
             include: [
@@ -1357,8 +1359,8 @@ exports.getReviews = async (req, res) => {
                         'userId',
                         'username',
                         'profileImage',
-                        [db.sequelize.literal('(SELECT COUNT(*) FROM literaryReview WHERE literaryReview.userId = User.userId)'), 'reviewCount'],
-                        [db.sequelize.literal('(SELECT COUNT(*) FROM followRelationship WHERE followRelationship.followedUserId = User.userId)'), 'followersCount']
+                        'totalReviews', 
+                        'totalFollowers' 
                     ]
                 }
             ],
@@ -1369,7 +1371,7 @@ exports.getReviews = async (req, res) => {
         if (reviews.length === 0) {
             return res.status(404).json({ success: false, message: "No reviews found for this work" });
         }
-        
+
         const formattedReviews = reviews.map(review => ({
             literaryReviewId: review.literaryReviewId,
             reviewContent: review.literaryReview.substring(0, review.literaryReview.length / 3), // Preview content
@@ -1378,10 +1380,10 @@ exports.getReviews = async (req, res) => {
                 userId: review.User.userId,
                 username: review.User.username,
                 profileImageUrl: review.User.profileImage,
-                reviewCount: review.dataValues.User.dataValues.reviewCount || 0,
-                followersCount: review.dataValues.User.dataValues.followersCount || 0
+                reviewCount: review.User.totalReviews || 0,
+                followersCount: review.User.totalFollowers || 0
             },
-            likeCount: review.dataValues.likeCount || 0,
+            likeCount: review.totalLikes || 0,
             commentCount: review.dataValues.commentCount || 0,
             links: [
                 { rel: "self", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "GET" },
@@ -1407,6 +1409,9 @@ exports.getReviews = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the reviews." });
     }
 };
+
+
+
 
 /**
  * Add a review to a specific work by ID.
@@ -1436,7 +1441,7 @@ exports.addReview = async (req, res) => {
         if (!req.userId) {
             return res.status(400).json({ success: false, message: 'User ID is required' });
         }
-        if (!literaryRating && literaryRating !== 0) {
+        if (literaryRating === undefined || literaryRating === null) {
             return res.status(400).json({ success: false, message: 'Literary rating is required' });
         }
 
@@ -1444,9 +1449,9 @@ exports.addReview = async (req, res) => {
         const newReview = await db.LiteraryReview.create({
             workId,
             userId: req.userId,
-            literaryReview, // This can be undefined if not provided, which is acceptable
+            literaryReview,
             literaryRating,
-            creationDate: new Date() // Default to current date/time
+            creationDate: new Date()
         });
 
         // Prepare response data
@@ -1476,6 +1481,7 @@ exports.addReview = async (req, res) => {
     }
 };
 
+
 /**
 * Update a review for a specific work by ID.
 * 
@@ -1487,43 +1493,43 @@ exports.updateReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const { literaryReview, literaryRating } = req.body;
-        
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
             return res.status(404).json({ success: false, message: 'Work not found.' });
         }
-        
+
         // Check if the review exists
         const review = await LiteraryReview.findByPk(literaryReviewId);
         if (!review) {
             return res.status(404).json({ success: false, message: `No review found with ID ${literaryReviewId}` });
         }
-        
+
         // Check if the review belongs to the user making the request
         if (review.userId !== req.userId) {
             return res.status(403).json({ success: false, message: 'You are not authorized to update this review.' });
         }
-        
+
         // Validate that literaryRating is provided and valid
         if (literaryRating === undefined || literaryRating === null) {
             return res.status(400).json({ success: false, message: 'Literary rating is required.' });
         }
-        
+
         // Prepare the update fields
         const reviewUpdates = {
             literaryReview,
             literaryRating,
             creationDate: new Date() // Update to current date/time
         };
-        
+
         // Update the review
         const [affectedRows] = await LiteraryReview.update(reviewUpdates, { where: { literaryReviewId } });
-        
+
         if (affectedRows === 0) {
             return res.status(200).json({ success: true, message: `No updates were made on review with ID ${literaryReviewId}.` });
         }
-        
+
         return res.json({ success: true, message: `Review with ID ${literaryReviewId} was updated successfully.` });
     } catch (err) {
         console.error("Error updating review:", err);
@@ -1534,6 +1540,7 @@ exports.updateReview = async (req, res) => {
         }
     }
 };
+
 
 // Get a specific review by work ID and review ID
 exports.getReview = async (req, res) => {
