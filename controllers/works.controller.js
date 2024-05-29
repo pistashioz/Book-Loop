@@ -198,7 +198,7 @@ exports.addAuthor = async (req, res) => {
                 return res.status(400).json({
                     success: false,
                     message: `Author "${authorName}" does not exist.`,
-                    links: [{ rel: 'create-author', href: '/authors', method: 'POST' }]
+                    links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
                 });
             }
             await BookAuthor.create({ workId: work.workId, personId: existingAuthor.personId }, { transaction: t });
@@ -272,7 +272,7 @@ exports.addGenre = async (req, res) => {
                 return res.status(400).json({
                     success: false,
                     message: `Genre "${genreName}" does not exist.`,
-                    links: [{ rel: 'create-genre', href: '/book-genres', method: 'POST' }]
+                    links: [{ rel: 'create-genre', href: '/genres', method: 'POST' }]
                 });
             }
             await BookGenre.create({ workId: work.workId, genreId: existingGenre.genreId }, { transaction: t });
@@ -652,6 +652,7 @@ exports.getEditions = async (req, res) => {
     }
 };
 
+
 /**
  * Add a new edition to a specific work by ID.
  * 
@@ -672,7 +673,7 @@ exports.addEdition = async (req, res) => {
             return res.status(404).json({ success: false, message: "Work not found" });
         }
 
-        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage, contributors = [] } = req.body;
+        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = req.body;
 
         if (!ISBN || !publisherName || !title || !synopsis || !editionType || !publicationDate || !language || !pageNumber || !coverImage) {
             return res.status(400).json({ success: false, message: "All fields are required" });
@@ -698,55 +699,10 @@ exports.addEdition = async (req, res) => {
             });
         }
 
-        // Check for existing editions of the same work with the same title and publication date
-        const originalEdition = await BookEdition.findOne({
-            where: {
-                workId,
-                title,
-                publicationDate: foundWork.firstPublishedDate
-            }
-        });
-
-        // Validate contributors based on the edition type and language
-        if (originalEdition && originalEdition.language !== language && !contributors.some(c => c.roles.includes('translator'))) {
-            return res.status(400).json({
-                success: false,
-                message: "A translator is required for editions in a different language."
-            });
-        }
-
-        if (editionType === 'Audiobook' && !contributors.some(c => c.roles.includes('narrator'))) {
-            return res.status(400).json({
-                success: false,
-                message: "A narrator is required for audiobook editions."
-            });
-        }
-
         // Create new book edition
         const newBookEdition = await BookEdition.create({
             ISBN, workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
         }, { transaction: t });
-
-        // Validate and associate contributors
-        for (const contributor of contributors) {
-            const { personName, roles } = contributor;
-            if (!personName || !roles) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Each contributor must have a personName and roles.",
-                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
-                });
-            }
-            const person = await Person.findOne({ where: { personName } });
-            if (!person) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Contributor "${personName}" does not exist.`,
-                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
-                });
-            }
-            await BookContributor.create({ editionISBN: newBookEdition.ISBN, personId: person.personId }, { transaction: t });
-        }
 
         await t.commit();
 
@@ -768,6 +724,90 @@ exports.addEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the book edition" });
     }
 };
+
+/**
+ * Add contributors to a book edition.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.addContributor = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId, editionISBN } = req.params;
+        const { contributors } = req.body;
+
+        // Check if book edition exists
+        const edition = await BookEdition.findOne({ where: { ISBN: editionISBN, workId } });
+        if (!edition) {
+            return res.status(404).json({ success: false, message: 'Book edition not found.' });
+        }
+
+        // Validate and associate contributors
+        for (const contributor of contributors) {
+            const { personName, roles } = contributor;
+            if (!personName || !roles) {
+                await t.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: "Each contributor must have a personName and roles.",
+                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
+                });
+            }
+            const person = await Person.findOne({ where: { personName } });
+            if (!person) {
+                await t.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: `Contributor "${personName}" does not exist.`,
+                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
+                });
+            }
+            await BookContributor.create({ editionISBN: edition.ISBN, personId: person.personId, roles }, { transaction: t });
+        }
+
+        await t.commit();
+        res.status(201).json({ success: true, message: 'Contributors added to book edition successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error adding contributors:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while adding contributors to the book edition." });
+    }
+};
+
+/**
+ * Remove a contributor from a book edition.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.removeContributor = async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+        const { workId, editionISBN } = req.params;
+        const { personId } = req.body;
+
+        // Check if book edition exists
+        const edition = await BookEdition.findOne({ where: { ISBN: editionISBN, workId } });
+        if (!edition) {
+            return res.status(404).json({ success: false, message: 'Book edition not found.' });
+        }
+
+        // Remove contributor association
+        await BookContributor.destroy({ where: { editionISBN, personId }, transaction: t });
+
+        await t.commit();
+        res.status(200).json({ success: true, message: 'Contributor removed from book edition successfully.' });
+    } catch (err) {
+        await t.rollback();
+        console.error("Error removing contributor:", err);
+        res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the contributor from the book edition." });
+    }
+};
+
+
 
 /**
  * Get a specific book edition by work ID and book edition ID (ISBN).

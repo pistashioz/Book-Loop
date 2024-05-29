@@ -30,6 +30,10 @@ router.route('/:workId/editions')
     .get( workController.getEditions)
     .post(verifyToken, isAdmin, workController.addEdition);
 
+    router.route('/:workId/editions/:editionISBN/contributors')
+    .post(verifyToken, isAdmin, workController.addContributor)
+    .delete(verifyToken, isAdmin, workController.removeContributor);
+
 router.route('/:workId/editions/:bookEditionId') /// falta esta
     .get(workController.getBookEdition)
     .patch(verifyToken, isAdmin,workController.updateBookEdition)
@@ -70,6 +74,7 @@ router.route('/:workId/authors')
 router.route('/:workId/genres')
 .post(verifyToken, isAdmin, workController.addGenre)
 .delete(verifyToken, isAdmin, workController.removeGenre);
+
 
 // Handle unsupported routes
 router.all('*', (req, res) => {
