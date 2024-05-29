@@ -198,7 +198,7 @@ exports.create = async (req, res) => {
             await BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
         }
 
-        // Create initial book edition if provided
+/*         // Create initial book edition if provided
         if (edition) {
             const { ISBN, publisherName, synopsis, editionType, language, pageNumber, coverImage } = edition;
 
@@ -224,7 +224,7 @@ exports.create = async (req, res) => {
                 pageNumber,
                 coverImage
             }, { transaction: t });
-        }
+        } */
 
         await t.commit();
 
@@ -265,19 +265,30 @@ exports.addAuthor = async (req, res) => {
         // Check if work exists
         const work = await Work.findByPk(workId);
         if (!work) {
+            await t.rollback();
             return res.status(404).json({ success: false, message: 'Work not found.' });
         }
 
-        // Check and prompt for author creation if needed
+        // Validate and associate authors
         for (const authorName of authors) {
-            const existingAuthor = await Person.findOne({ where: { personName: authorName } });
+            const existingAuthor = await Person.findOne({
+                where: { personName: authorName },
+                include: {
+                    model: Role,
+                    where: { roleName: 'author' },
+                    through: { attributes: [] } // Exclude PersonRole attributes from the result???
+                }
+            });
+
             if (!existingAuthor) {
+                await t.rollback();
                 return res.status(400).json({
                     success: false,
-                    message: `Author "${authorName}" does not exist.`,
+                    message: `Author "${authorName}" does not exist or does not have the 'author' role.`,
                     links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
                 });
             }
+
             await BookAuthor.create({ workId: work.workId, personId: existingAuthor.personId }, { transaction: t });
         }
 
@@ -290,6 +301,7 @@ exports.addAuthor = async (req, res) => {
         res.status(500).json({ success: false, message: err.message || "Some error occurred while adding authors to the work." });
     }
 };
+
 
 /**
  * Remove an author from a work.
@@ -307,14 +319,34 @@ exports.removeAuthor = async (req, res) => {
         // Check if work exists
         const work = await Work.findByPk(workId);
         if (!work) {
+            await t.rollback();
             return res.status(404).json({ success: false, message: 'Work not found.' });
+        }
+
+        // Check if the author association exists
+        const authorAssociation = await BookAuthor.findOne({ where: { workId, personId: authorId } });
+        if (!authorAssociation) {
+            await t.rollback();
+            return res.status(404).json({ success: false, message: 'Author association not found for this work.' });
+        }
+
+        // Count current authors
+        const currentAuthorsCount = await BookAuthor.count({ where: { workId } });
+
+        // If there's only one author left, don't allow deletion
+        if (currentAuthorsCount <= 1) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot remove the only author from the work. Add another author before removing this one.',
+                links: [{ rel: 'add-author', href: `/works/${workId}/authors`, method: 'POST' }]
+            });
         }
 
         // Remove author association
         await BookAuthor.destroy({ where: { workId, personId: authorId }, transaction: t });
 
         await t.commit();
-
         res.status(200).json({ success: true, message: 'Author removed from work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -322,6 +354,7 @@ exports.removeAuthor = async (req, res) => {
         res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the author from the work." });
     }
 };
+
 
 /**
  * Add a genre to a work.
@@ -381,14 +414,34 @@ exports.removeGenre = async (req, res) => {
         // Check if work exists
         const work = await Work.findByPk(workId);
         if (!work) {
+            await t.rollback();
             return res.status(404).json({ success: false, message: 'Work not found.' });
+        }
+
+        // Check if the genre association exists
+        const genreAssociation = await BookGenre.findOne({ where: { workId, genreId } });
+        if (!genreAssociation) {
+            await t.rollback();
+            return res.status(404).json({ success: false, message: 'Genre association not found for this work.' });
+        }
+
+        // Count current genres
+        const currentGenresCount = await BookGenre.count({ where: { workId } });
+
+        // If there's only one genre left, don't allow deletion
+        if (currentGenresCount <= 1) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot remove the only genre from the work. Add another genre before removing this one.',
+                links: [{ rel: 'add-genre', href: `/works/${workId}/genres`, method: 'POST' }]
+            });
         }
 
         // Remove genre association
         await BookGenre.destroy({ where: { workId, genreId }, transaction: t });
 
         await t.commit();
-
         res.status(200).json({ success: true, message: 'Genre removed from work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -398,33 +451,89 @@ exports.removeGenre = async (req, res) => {
 };
 
 
+
 // NEED TO REVIEW - i DONT NEED THE BOOK EDITIONS HERE, HE WANT INSTEAD THE COUNT OF IT, AND THEN GET AUTHORS AND GENRES
 // Find a specific work by ID
+/**
+ * Retrieve a specific work by ID with author and genre information.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.findWork = async (req, res) => {
     try {
         const work = await Work.findByPk(req.params.workId, {
-            include: [{
-                model: BookEdition,
-                attributes: ['ISBN', 'title', 'synopsis']
-            }]
+            include: [
+                {
+                    model: Person,
+                    as: 'Authors',
+                    through: {
+                        attributes: []
+                    },
+                    attributes: ['personId', 'personName']
+                },
+                {
+                    model: Genre,
+                    as: 'Genres',
+                    through: {
+                        attributes: []
+                    },
+                    attributes: ['genreId', 'genreName']
+                },
+                {
+                    model: BookEdition,
+                    attributes: [],
+                }
+            ],
+            attributes: {
+                include: [
+                    [
+                        db.sequelize.fn('COUNT', db.sequelize.col('BookEditions.ISBN')),
+                        'editionCount'
+                    ]
+                ]
+            },
+            group: ['Work.workId'] //'Authors.personId', 'Genres.genreId'
         });
+
         if (!work) {
-            return res.status(404).json({ success: false, msg: `No work found with id ${req.params.workId}` });
+            return res.status(404).json({ success: false, message: `No work found with id ${req.params.workId}` });
         }
+
         return res.json({
             success: true,
-            data: work,
+            data: {
+                workId: work.workId,
+                originalTitle: work.originalTitle,
+                firstPublishedDate: work.firstPublishedDate,
+                seriesId: work.seriesId,
+                seriesOrder: work.seriesOrder,
+                authors: work.Authors.map(author => ({
+                    personId: author.personId,
+                    personName: author.personName
+                })),
+                genres: work.Genres.map(genre => ({
+                    genreId: genre.genreId,
+                    genreName: genre.genreName
+                })),
+                editionCount: work.dataValues.editionCount,
+            },
             links: [
                 { rel: "self", href: `/works/${work.workId}`, method: "GET" },
                 { rel: "delete", href: `/works/${work.workId}`, method: "DELETE" },
                 { rel: "modify", href: `/works/${work.workId}`, method: "PUT" },
+                { rel: "add-edition", href: `/works/${work.workId}/editions`, method: "POST" },
+                { rel: "add-author", href: `/works/${work.workId}/authors`, method: "POST" },
+                { rel: "add-genre", href: `/works/${work.workId}/genres`, method: "POST" },
             ],
         });
     } catch (err) {
         console.error("Error finding work:", err);
-        return res.status(400).json({ message: err.message || "Some error occurred" });
+        return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the work" });
     }
 };
+
 
 /**
  * Update a specific work by ID.
@@ -777,17 +886,29 @@ exports.addEdition = async (req, res) => {
         }
 
         // Validate contributors based on the edition type and language
-        if (!contributors.length) {
+        if (foundWork.language !== language && !contributors.some(c => c.roles.includes('translator'))) {
             return res.status(400).json({
                 success: false,
-                message: "At least one contributor is required."
+                message: "A translator is required for editions in a different language."
             });
         }
 
-        const validContributors = [];
+        if (editionType === 'Audiobook' && !contributors.some(c => c.roles.includes('narrator'))) {
+            return res.status(400).json({
+                success: false,
+                message: "A narrator is required for audiobook editions."
+            });
+        }
+
+        // Create new book edition
+        const newBookEdition = await BookEdition.create({
+            ISBN, workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
+        }, { transaction: t });
+
+        // Validate and associate contributors
         for (const contributor of contributors) {
             const { personName, roles } = contributor;
-            if (!personName || !roles || !roles.length) {
+            if (!personName || !roles) {
                 return res.status(400).json({
                     success: false,
                     message: "Each contributor must have a personName and roles.",
@@ -802,42 +923,11 @@ exports.addEdition = async (req, res) => {
                     links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
                 });
             }
-            const personRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
-            if (personRoles.length !== roles.length) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Some roles for contributor "${personName}" are invalid.`,
-                    links: [{ rel: 'create-role', href: '/roles', method: 'POST' }]
-                });
+            const validRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
+            if (validRoles.length !== roles.length) {
+                return res.status(400).json({ success: false, message: `Some roles are invalid.` });
             }
-            validContributors.push({ person, personRoles });
-        }
-
-        // Validate specific roles for edition type and language
-        if (!validContributors.some(c => c.personRoles.some(role => role.roleName === 'translator')) && originalEdition && originalEdition.language !== language) {
-            return res.status(400).json({
-                success: false,
-                message: "A translator is required for editions in a different language.",
-                links: [{ rel: 'add-role', href: '/persons/:personId/roles', method: 'POST' }]
-            });
-        }
-
-        if (!validContributors.some(c => c.personRoles.some(role => role.roleName === 'narrator')) && editionType === 'Audiobook') {
-            return res.status(400).json({
-                success: false,
-                message: "A narrator is required for audiobook editions.",
-                links: [{ rel: 'add-role', href: '/persons/:personId/roles', method: 'POST' }]
-            });
-        }
-
-        // Create new book edition
-        const newBookEdition = await BookEdition.create({
-            ISBN, workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
-        }, { transaction: t });
-
-        // Associate contributors with the book edition
-        for (const { person, personRoles } of validContributors) {
-            for (const role of personRoles) {
+            for (const role of validRoles) {
                 await BookContributor.create({ editionISBN: newBookEdition.ISBN, personId: person.personId, roleId: role.roleId }, { transaction: t });
             }
         }
@@ -864,6 +954,7 @@ exports.addEdition = async (req, res) => {
 };
 
 
+
 /**
  * Add contributors to a book edition.
  * 
@@ -878,32 +969,68 @@ exports.addContributor = async (req, res) => {
         const { contributors } = req.body;
 
         // Check if book edition exists
-        const edition = await BookEdition.findOne({ where: { ISBN: editionISBN, workId } });
+        const edition = await BookEdition.findOne({
+            where: { ISBN: editionISBN, workId },
+            include: [{ model: db.Work, attributes: ['firstPublishedDate', 'originalTitle'] }]
+        });
         if (!edition) {
+            await t.rollback();
             return res.status(404).json({ success: false, message: 'Book edition not found.' });
         }
 
-        // Validate and associate contributors
+        // Validate specific roles for edition type and language
+        const originalWork = edition.Work;
+        const needsTranslator = originalWork.firstPublishedDate !== edition.publicationDate && edition.language !== originalWork.language;
+        const needsNarrator = edition.editionType === 'Audiobook';
+
+        const validContributors = [];
         for (const contributor of contributors) {
-            const { personName, roles } = contributor;
-            if (!personName || !roles) {
+            const { personName, roleName } = contributor;
+            if (!personName || !roleName) {
                 await t.rollback();
                 return res.status(400).json({
                     success: false,
-                    message: "Each contributor must have a personName and roles.",
+                    message: "Each contributor must have a personName and roleName.",
                     links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
                 });
             }
-            const person = await Person.findOne({ where: { personName } });
+            const person = await Person.findOne({
+                where: { personName },
+                include: [{ model: Role, as: 'Roles', where: { roleName } }]
+            });
             if (!person) {
                 await t.rollback();
                 return res.status(400).json({
                     success: false,
-                    message: `Contributor "${personName}" does not exist.`,
+                    message: `Contributor "${personName}" does not exist or does not have the role "${roleName}".`,
                     links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
                 });
             }
-            await BookContributor.create({ editionISBN: edition.ISBN, personId: person.personId, roles }, { transaction: t });
+            validContributors.push({ person, roleName });
+        }
+
+        if (needsTranslator && !validContributors.some(c => c.roleName === 'translator')) {
+            return res.status(400).json({
+                success: false,
+                message: "A translator is required for editions in a different language."
+            });
+        }
+
+        if (needsNarrator && !validContributors.some(c => c.roleName === 'narrator')) {
+            return res.status(400).json({
+                success: false,
+                message: "A narrator is required for audiobook editions."
+            });
+        }
+
+        // Associate contributors
+        for (const { person, roleName } of validContributors) {
+            const role = await Role.findOne({ where: { roleName } });
+            await BookContributor.create({
+                editionISBN: edition.ISBN,
+                personId: person.personId,
+                roleId: role.roleId
+            }, { transaction: t });
         }
 
         await t.commit();
@@ -914,6 +1041,7 @@ exports.addContributor = async (req, res) => {
         res.status(500).json({ success: false, message: err.message || "Some error occurred while adding contributors to the book edition." });
     }
 };
+
 
 /**
  * Remove a contributor from a book edition.
@@ -931,7 +1059,28 @@ exports.removeContributor = async (req, res) => {
         // Check if book edition exists
         const edition = await BookEdition.findOne({ where: { ISBN: editionISBN, workId } });
         if (!edition) {
+            await t.rollback();
             return res.status(404).json({ success: false, message: 'Book edition not found.' });
+        }
+
+        // Check if the contributor exists
+        const contributor = await BookContributor.findOne({ where: { editionISBN, personId } });
+        if (!contributor) {
+            await t.rollback();
+            return res.status(404).json({ success: false, message: 'Contributor not found for this book edition.' });
+        }
+
+        // Count current contributors
+        const currentContributorsCount = await BookContributor.count({ where: { editionISBN } });
+
+        // If there's only one contributor left, don't allow deletion
+        if (currentContributorsCount <= 1) {
+            await t.rollback();
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Cannot remove the only contributor from the book edition. Add another contributor before removing this one.',
+                links: [{ rel: 'add-contributor', href: '/works/:workId/editions/:editionISBN/contributors', method: 'POST' }]
+            });
         }
 
         // Remove contributor association
@@ -945,7 +1094,6 @@ exports.removeContributor = async (req, res) => {
         res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the contributor from the book edition." });
     }
 };
-
 
 
 /**
@@ -979,6 +1127,29 @@ exports.getBookEdition = async (req, res) => {
                             model: db.BookInSeries,
                             as: 'BookInSeries',
                             attributes: ['seriesId', 'seriesName', 'seriesDescription']
+                        },
+                        {
+                            model: db.BookAuthor,
+                            include: [
+                                {
+                                    model: db.Person,
+                                    attributes: ['personId', 'personName']
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    model: db.BookContributor,
+                    include: [
+                        {
+                            model: db.Person,
+                            attributes: ['personId', 'personName'],
+                            include: {
+                                model: db.Role,
+                                through: { attributes: [] },
+                                attributes: ['roleName']
+                            }
                         }
                     ]
                 }
@@ -1004,8 +1175,17 @@ exports.getBookEdition = async (req, res) => {
                 publisherName: bookEdition.Publisher.publisherName,
                 Work: {
                     workId: bookEdition.Work.workId,
-                    firstPublishedDate: bookEdition.Work.firstPublishedDate
-                }
+                    firstPublishedDate: bookEdition.Work.firstPublishedDate,
+                    authors: bookEdition.Work.BookAuthors.map(ba => ({
+                        personId: ba.Person.personId,
+                        personName: ba.Person.personName
+                    }))
+                },
+                contributors: bookEdition.BookContributors.map(bc => ({
+                    personId: bc.Person.personId,
+                    personName: bc.Person.personName,
+                    roles: bc.Person.Roles.map(role => role.roleName)
+                }))
             }
         };
 
@@ -1028,6 +1208,7 @@ exports.getBookEdition = async (req, res) => {
         });
     }
 };
+
 
 /**
  * Update a specific book edition by work ID and book edition ID (ISBN).

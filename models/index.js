@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-//    return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -193,5 +193,8 @@ db.PersonRole.belongsTo(db.Person, { foreignKey: 'personId'});
 
 db.Role.hasMany(db.PersonRole, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
 db.PersonRole.belongsTo(db.Role, { foreignKey: 'roleId'});
+
+db.Role.hasMany(db.BookContributor, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+db.BookContributor.belongsTo(db.Role, { foreignKey: 'roleId' });
 
 module.exports = db;
