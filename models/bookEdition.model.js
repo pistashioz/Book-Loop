@@ -54,10 +54,13 @@ module.exports = (sequelize, DataTypes) => {
     publicationDate: {
       type: DataTypes.DATEONLY,
     },
-    language: {
-      type: DataTypes.STRING,
+    languageId: {
+      type: DataTypes.INTEGER,
       allowNull: false,
-      validate: { notNull: { msg: 'Language cannot be null or empty!' } }
+      references: {
+        model: 'languages',
+        key: 'languageId'
+      }
     },
     pageNumber: {
       type: DataTypes.INTEGER,

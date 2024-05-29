@@ -63,7 +63,7 @@ db.PersonRole = require('./personRoles.model.js')(sequelize, DataTypes);
 db.BookAuthor = require('./bookAuthor.model.js')(sequelize, DataTypes);
 db.BookGenre = require('./bookGenre.model.js')(sequelize, DataTypes);
 db.BookContributor = require('./bookContributor.model.js')(sequelize, DataTypes);
-
+db.Language = require('./language.model.js')(sequelize, DataTypes);
 
 
 // Define relationships
@@ -112,6 +112,12 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
+
+db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionISBN' });
+db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionISBN' });
+
+db.Language.hasMany(db.BookEdition, { foreignKey: 'languageId', onDelete: 'RESTRICT' }); 
+db.BookEdition.belongsTo(db.Language, { foreignKey: 'languageId' });
 
 db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionISBN', onDelete: 'CASCADE' });
 db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionISBN' });
