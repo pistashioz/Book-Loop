@@ -1,4 +1,3 @@
-const { raw } = require('mysql2');
 const db = require('../models');
 const {
     Work,
@@ -109,8 +108,6 @@ exports.findAll = async (req, res) => {
     }
 };
 
-
-
 /**
  * Create a new work along with an optional initial book edition.
  * 
@@ -155,12 +152,21 @@ exports.create = async (req, res) => {
 
         // Check and prompt for author creation if needed
         for (const authorName of authors) {
-            const existingAuthor = await Person.findOne({ where: { personName: authorName } });
+            const existingAuthor = await Person.findOne({
+                where: { personName: authorName },
+                include: [{
+                    model: PersonRole,
+                    include: [{
+                        model: Role,
+                        where: { roleName: 'author' }
+                    }]
+                }]
+            });
             if (!existingAuthor) {
                 return res.status(400).json({
                     success: false,
-                    message: `Author "${authorName}" does not exist.`,
-                    links: [{ rel: 'create-author', href: '/authors', method: 'POST' }]
+                    message: `Author "${authorName}" does not exist or is not assigned the role of 'author'.`,
+                    links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
                 });
             }
         }
@@ -194,7 +200,7 @@ exports.create = async (req, res) => {
 
         // Create initial book edition if provided
         if (edition) {
-            const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = edition;
+            const { ISBN, publisherName, synopsis, editionType, language, pageNumber, coverImage } = edition;
 
             // Find the publisher
             const publisher = await Publisher.findOne({ where: { publisherName } });
@@ -207,7 +213,16 @@ exports.create = async (req, res) => {
             }
 
             await BookEdition.create({
-                ISBN, workId: newWork.workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
+                ISBN,
+                workId: newWork.workId,
+                publisherId: publisher.publisherId,
+                title: originalTitle,  // Ensure title matches originalTitle
+                synopsis,
+                editionType,
+                publicationDate: firstPublishedDate,  // Ensure publicationDate matches firstPublishedDate
+                language,
+                pageNumber,
+                coverImage
             }, { transaction: t });
         }
 
@@ -233,7 +248,6 @@ exports.create = async (req, res) => {
         }
     }
 };
-
 
 /**
  * Add an author to a work.
@@ -736,7 +750,7 @@ exports.addEdition = async (req, res) => {
             return res.status(404).json({ success: false, message: "Work not found" });
         }
 
-        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage } = req.body;
+        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage, contributors = [] } = req.body;
 
         if (!ISBN || !publisherName || !title || !synopsis || !editionType || !publicationDate || !language || !pageNumber || !coverImage) {
             return res.status(400).json({ success: false, message: "All fields are required" });
@@ -762,10 +776,71 @@ exports.addEdition = async (req, res) => {
             });
         }
 
+        // Validate contributors based on the edition type and language
+        if (!contributors.length) {
+            return res.status(400).json({
+                success: false,
+                message: "At least one contributor is required."
+            });
+        }
+
+        const validContributors = [];
+        for (const contributor of contributors) {
+            const { personName, roles } = contributor;
+            if (!personName || !roles || !roles.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Each contributor must have a personName and roles.",
+                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
+                });
+            }
+            const person = await Person.findOne({ where: { personName } });
+            if (!person) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Contributor "${personName}" does not exist.`,
+                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
+                });
+            }
+            const personRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
+            if (personRoles.length !== roles.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Some roles for contributor "${personName}" are invalid.`,
+                    links: [{ rel: 'create-role', href: '/roles', method: 'POST' }]
+                });
+            }
+            validContributors.push({ person, personRoles });
+        }
+
+        // Validate specific roles for edition type and language
+        if (!validContributors.some(c => c.personRoles.some(role => role.roleName === 'translator')) && originalEdition && originalEdition.language !== language) {
+            return res.status(400).json({
+                success: false,
+                message: "A translator is required for editions in a different language.",
+                links: [{ rel: 'add-role', href: '/persons/:personId/roles', method: 'POST' }]
+            });
+        }
+
+        if (!validContributors.some(c => c.personRoles.some(role => role.roleName === 'narrator')) && editionType === 'Audiobook') {
+            return res.status(400).json({
+                success: false,
+                message: "A narrator is required for audiobook editions.",
+                links: [{ rel: 'add-role', href: '/persons/:personId/roles', method: 'POST' }]
+            });
+        }
+
         // Create new book edition
         const newBookEdition = await BookEdition.create({
             ISBN, workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
         }, { transaction: t });
+
+        // Associate contributors with the book edition
+        for (const { person, personRoles } of validContributors) {
+            for (const role of personRoles) {
+                await BookContributor.create({ editionISBN: newBookEdition.ISBN, personId: person.personId, roleId: role.roleId }, { transaction: t });
+            }
+        }
 
         await t.commit();
 
@@ -787,6 +862,7 @@ exports.addEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the book edition" });
     }
 };
+
 
 /**
  * Add contributors to a book edition.
@@ -1003,7 +1079,7 @@ exports.updateBookEdition = async (req, res) => {
 
         // Validate publisherId if it is being updated
         if (updatedData.publisherId && updatedData.publisherId !== bookEdition.publisherId) {
-            const newPublisher = await db.Publisher.findByPk(updatedData.publisherId);
+            const newPublisher = await Publisher.findByPk(updatedData.publisherId);
             if (!newPublisher) {
                 return res.status(400).json({
                     success: false,
