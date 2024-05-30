@@ -53,6 +53,7 @@ exports.verifyToken = async (req, res, next) => {
 exports.issueAccessToken = (userId, sessionId) => {
     try {
         const expirationMins = config.jwtExpiration;
+        console.log(`The expiration time for the access token is ${expirationMins} minutes.`);
         const expirationSeconds = dayjs.duration({ minutes: expirationMins }).asSeconds();
         
         console.log(`The expiration time for the access token is ${expirationSeconds} seconds.`);
@@ -61,7 +62,7 @@ exports.issueAccessToken = (userId, sessionId) => {
             expiresIn: expirationSeconds
         });
         
-        const cookieExpires = dayjs().add(5, 'minutes').toDate();
+        const cookieExpires = dayjs().add(25, 'minutes').toDate();
         
         return { 
             token, 

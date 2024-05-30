@@ -122,20 +122,20 @@ db.BookEdition.belongsTo(db.Language, { foreignKey: 'languageId' });
 db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionISBN', onDelete: 'CASCADE' });
 db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionISBN' });
 
-db.Work.hasMany(db.BookAuthor, { foreignKey: 'workId', onDelete: 'CASCADE' });
-db.BookAuthor.belongsTo(db.Work, { foreignKey: 'workId' });
-
-db.Person.hasMany(db.BookAuthor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
-db.BookAuthor.belongsTo(db.Person, { foreignKey: 'personId' });
-
 db.Person.hasMany(db.BookContributor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
 db.BookContributor.belongsTo(db.Person, { foreignKey: 'personId' });
 
-db.Work.hasMany(db.BookGenre, { foreignKey: 'workId', onDelete: 'CASCADE' });
+db.Work.hasMany(db.BookGenre, { foreignKey: 'workId', onDelete: 'CASCADE', as: 'BookGenres' });
 db.BookGenre.belongsTo(db.Work, { foreignKey: 'workId' });
 
 db.Genre.hasMany(db.BookGenre, { foreignKey: 'genreId', onDelete: 'RESTRICT' });
-db.BookGenre.belongsTo(db.Genre, { foreignKey: 'genreId' });
+db.BookGenre.belongsTo(db.Genre, { foreignKey: 'genreId', as: 'Genre' });
+
+db.Work.hasMany(db.BookAuthor, { foreignKey: 'workId', onDelete: 'CASCADE', as: 'BookAuthors' });
+db.BookAuthor.belongsTo(db.Work, { foreignKey: 'workId' });
+
+db.Person.hasMany(db.BookAuthor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
+db.BookAuthor.belongsTo(db.Person, { foreignKey: 'personId', as: 'Person' });
 
 db.User.hasMany(db.Listing, { foreignKey: 'sellerUserId', onDelete: 'RESTRICT' });
 db.Listing.belongsTo(db.User, { foreignKey: 'sellerUserId' });

@@ -5,100 +5,226 @@ const {
     BookEdition,
     LiteraryReview,
     CommentReview,
-    User,
+    BookAuthor,
     LikeReview,
     LikeComment,
     BookInSeries,
     Publisher,
+    BookGenre,
+    Language,
     Genre,
     BookContributor 
 } = db;
-const { ValidationError, Op, where } = require('sequelize');
-
+const { ValidationError, Op, Sequelize } = require('sequelize');
 
 
 /**
- * Fetch all works with pagination and average rating.
- * 
- * @param {Object} req - Express request object
- * @param {Object} req.query - Query parameters from the request
- * @param {number} req.query.page - Page number for pagination (default is 1)
- * @param {number} req.query.limit - Number of items per page for pagination (default is 10)
- * @param {Object} res - Express response object
- * @returns {Promise<Object>} JSON response with success status, message, works data, and pagination info
+ * Fetch all works with pagination, average rating, and associated data.
+ * Allows filtering by genres, authors, dates, languages, and average literary rating.
+ * Also allows sorting by publication date, average rating, or total reviews.
  */
 exports.findAll = async (req, res) => {
     try {
-        // Extract pagination parameters from query, with defaults
-        const { page = 1, limit = 10 } = req.query; // Default to page 1, 10 items per page
-        const offset = (page - 1) * limit;
+        // Extract query parameters
+        const { 
+            page = 1, 
+            limit = 10, 
+            genres, 
+            authors, 
+            startDate, 
+            endDate, 
+            language, 
+            minRating, 
+            maxRating, 
+            sortBy = 'publicationDate', 
+            sortOrder = 'DESC' 
+        } = req.query;
+        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-        // Get the total count of works in the database
-        const totalWorks = await Work.count();
+        // Build filtering conditions
+        let whereClause = {};
+        let havingClause = {};
+        let orderClause = [];
+        let workIds = [];
 
-        // Fetch paginated results with associated data
-        const { count, rows } = await Work.findAndCountAll({
-            attributes: [
-                'workId',
-                'originalTitle',
-                'firstPublishedDate',
-                'seriesId',
-                'seriesOrder',
-                // Calculate average literary rating
-                [db.sequelize.literal(`ROUND((SELECT AVG(literaryReview.literaryRating) FROM literaryReview WHERE literaryReview.workId = Work.workId), 2)`), 'averageLiteraryRating']
-            ],
+        // Filter by rating
+        if (minRating || maxRating) {
+            havingClause.averageLiteraryRating = {};
+            if (minRating) havingClause.averageLiteraryRating[Op.gte] = parseFloat(minRating);
+            if (maxRating) havingClause.averageLiteraryRating[Op.lte] = parseFloat(maxRating);
+        }
+
+        // Filter by publication date in the PrimaryEdition table
+        let primaryEditionWhereClause = {};
+        if (startDate || endDate) {
+            primaryEditionWhereClause.publicationDate = {};
+            if (startDate) primaryEditionWhereClause.publicationDate[Op.gte] = startDate;
+            if (endDate) primaryEditionWhereClause.publicationDate[Op.lte] = endDate;
+        }
+
+        // Sorting
+        if (sortBy && sortOrder) {
+            orderClause.push([Sequelize.col(sortBy), sortOrder]);
+        }
+
+        // Filter by genres
+        if (genres) {
+            const genreWorkIds = await BookGenre.findAll({
+                attributes: ['workId'],
+                include: [{
+                    model: Genre,
+                    as: 'Genre',
+                    where: { genreName: { [Op.in]: genres.split(',') } }
+                }]
+            });
+            workIds = genreWorkIds.map(genre => genre.workId);
+        }
+
+        // Filter by authors
+        if (authors) {
+            const authorWorkIds = await BookAuthor.findAll({
+                attributes: ['workId'],
+                include: [{
+                    model: Person,
+                    as: 'Person',
+                    where: { personName: { [Op.in]: authors.split(',') } }
+                }]
+            });
+            if (workIds.length > 0) {
+                const authorWorkIdsList = authorWorkIds.map(author => author.workId);
+                workIds = workIds.filter(workId => authorWorkIdsList.includes(workId));
+            } else {
+                workIds = authorWorkIds.map(author => author.workId);
+            }
+        }
+
+        // If workIds array is not empty, add it to the where clause
+        if (workIds.length > 0) {
+            whereClause.workId = { [Op.in]: workIds };
+        }
+
+        // Count total works based on filters
+        const totalWorks = await Work.count({
+            where: whereClause,
             include: [
                 {
-                    model: db.LiteraryReview,
-                    attributes: [], // Exclude LiteraryReview attributes from the main result
+                    model: BookEdition,
+                    as: 'PrimaryEdition',
+                    where: primaryEditionWhereClause,
+                    include: [
+                        {
+                            model: Language,
+                            as: 'Language',
+                            where: language ? { languageName: language } : {}
+                        }
+                    ]
+                }
+            ]
+        });
+
+        // Fetch main works with pagination
+        const works = await Work.findAll({
+            attributes: [
+                'workId',
+                'averageLiteraryRating',
+                'totalReviews',
+                'seriesId',
+                'seriesOrder',
+                'primaryEditionISBN'
+            ],
+            where: whereClause,
+            include: [
+                {
+                    model: BookEdition,
+                    as: 'PrimaryEdition',
+                    attributes: ['title', 'publicationDate', 'synopsis', 'coverImage'],
+                    where: primaryEditionWhereClause,
+                    include: [
+                        {
+                            model: Language,
+                            as: 'Language',
+                            attributes: ['languageName'],
+                            where: language ? { languageName: language } : {}
+                        }
+                    ]
                 },
                 {
-                    model: db.BookInSeries,
-                    as: 'BookInSeries', // Use alias defined in the model association
+                    model: BookInSeries,
+                    as: 'BookInSeries',
                     attributes: ['seriesName'],
                     required: false // Left join
                 }
             ],
-            group: ['Work.workId'], 
-            order: [['firstPublishedDate', 'DESC']], 
-            limit, // Limit results to the specified page size
-            offset // Offset results for pagination
+            group: ['Work.workId'],
+            having: havingClause,
+            order: orderClause,
+            limit: parseInt(limit, 10),
+            offset: parseInt(offset, 10)
         });
 
         // Handle case where no works are found
-        if (rows.length === 0) {
+        if (works.length === 0) {
             return res.status(404).json({ success: false, message: "No works found" });
         }
 
+        // Fetch Genres and Authors for each work separately
+        for (let work of works) {
+            const genres = await BookGenre.findAll({
+                include: [{
+                    model: Genre,
+                    as: 'Genre',
+                    attributes: ['genreId', 'genreName'],
+                }],
+                where: { workId: work.workId }
+            });
+            work.dataValues.Genres = genres.map(genre => genre.Genre);
+
+            const authors = await BookAuthor.findAll({
+                include: [{
+                    model: Person,
+                    as: 'Person',
+                    attributes: ['personId', 'personName'],
+                }],
+                where: { workId: work.workId }
+            });
+            work.dataValues.Authors = authors.map(author => author.Person);
+        }
+
         // Map works to the desired response format
-        const works = rows.map(work => ({
+        const result = works.map(work => ({
             workId: work.workId,
-            originalTitle: work.originalTitle,
-            firstPublishedDate: work.firstPublishedDate,
-            averageRating: work.dataValues.averageLiteraryRating || 0,
+            title: work.PrimaryEdition ? work.PrimaryEdition.title : null,
+            publicationDate: work.PrimaryEdition ? work.PrimaryEdition.publicationDate : null,
+            synopsis: work.PrimaryEdition ? work.PrimaryEdition.synopsis : null,
+            coverImage: work.PrimaryEdition ? work.PrimaryEdition.coverImage : null,
+            language: work.PrimaryEdition && work.PrimaryEdition.Language ? work.PrimaryEdition.Language.languageName : null,
+            averageRating: work.averageLiteraryRating || 0,
+            totalReviews: work.totalReviews || 0,
             Series: {
                 seriesId: work.seriesId,
                 seriesOrder: work.seriesOrder,
                 seriesName: work.BookInSeries ? work.BookInSeries.seriesName : 'Not part of a series'
             },
+            Authors: work.dataValues.Authors,
+            Genres: work.dataValues.Genres,
             links: [
                 { rel: "self", href: `/works/${work.workId}`, method: "GET" },
                 { rel: "delete", href: `/works/${work.workId}`, method: "DELETE" },
-                { rel: "modify", href: `/works/${work.workId}`, method: "PATCH" },
+                { rel: "modify", href: `/works/${work.workId}`, method: "PATCH" }
             ]
         }));
 
         // Calculate total number of pages
-        const totalPages = Math.ceil(totalWorks / limit);
+        const totalPages = Math.ceil(totalWorks / parseInt(limit, 10));
 
         // Send the response with works data and pagination info
         return res.status(200).json({
             success: true,
-            message: `Found ${rows.length} works`,
-            totalWorks: totalWorks,
+            message: `Found ${works.length} works`,
+            totalWorks,
             totalPages,
             currentPage: parseInt(page, 10),
-            works,
+            works: result,
             links: [{ rel: "add-work", href: `/work`, method: "POST" }]
         });
     } catch (error) {
