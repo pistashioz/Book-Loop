@@ -93,7 +93,7 @@ exports.create = async (req, res) => {
 
         const validRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
         if (validRoles.length !== roles.length) {
-            return res.status(400).json({ success: false, message: `Some roles are invalid.` });
+            return res.status(400).json({ success: false, message: 'Some roles are invalid.' });
         }
 
         // Check if person already exists
@@ -114,21 +114,26 @@ exports.create = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'New Person created',
-            URL: `/persons/${newPerson.personId}`
+            message: 'New person created successfully',
+            person: newPerson,
+            links: [
+                { rel: "self", href: `/persons/${newPerson.personId}`, method: "GET" },
+                { rel: "delete", href: `/persons/${newPerson.personId}`, method: "DELETE" },
+                { rel: "modify", href: `/persons/${newPerson.personId}`, method: "PUT" }
+            ]
         });
     } catch (err) {
         await t.rollback();
         if (err instanceof ValidationError) {
-            return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {
-            return res.status(500).json({
-                message: err.message || "Some error occurred while creating the person"
+            res.status(500).json({
+                success: false,
+                message: err.message || "Some error occurred while creating the person."
             });
         }
     }
 };
-
 /**
  * Retrieve all available roles.
  * 
