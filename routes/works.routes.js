@@ -69,12 +69,15 @@ router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
     // Routes to handle operations on authors and genres of a specific work by ID
 router.route('/:workId/authors')
 .post(verifyToken, isAdmin, workController.addAuthor)
-.delete(verifyToken, isAdmin, workController.removeAuthor);
+
+router.route('/:workId/authors/:authorId')
+    .delete(verifyToken, isAdmin, workController.removeAuthor);
 
 router.route('/:workId/genres')
-.post(verifyToken, isAdmin, workController.addGenre)
-.delete(verifyToken, isAdmin, workController.removeGenre);
+.post(verifyToken, isAdmin, workController.addGenre);
 
+router.route('/:workId/genres/:genreId')
+    .delete(verifyToken, isAdmin, workController.removeGenre);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {
