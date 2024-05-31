@@ -2,10 +2,18 @@ const db = require('../models');
 const {Genre, Work, BookGenre, LiteraryReview, BookInSeries, BookEdition} = db;
 const { ValidationError, Op } = require('sequelize');
 
+
+/**
+ * Create a new genre.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.createGenre = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
-        const { genreName, works } = req.body;
+        const { genreName } = req.body;
 
         // Validate genreName
         if (!genreName) {
@@ -25,22 +33,6 @@ exports.createGenre = async (req, res) => {
         // Create new genre
         const newGenre = await Genre.create({ genreName }, { transaction: t });
 
-        // Handle associations with works if provided
-        if (works) {
-            for (const workId of works) {
-                const work = await Work.findByPk(workId);
-                if (!work) {
-                    await t.rollback();
-                    return res.status(404).json({
-                        success: false,
-                        message: `Work with ID ${workId} not found.`,
-                        links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
-                    });
-                }
-                await BookGenre.create({ workId, genreId: newGenre.genreId }, { transaction: t });
-            }
-        }
-
         await t.commit();
         res.status(201).json({
             success: true,
@@ -58,6 +50,7 @@ exports.createGenre = async (req, res) => {
         }
     }
 };
+
 
 /**
  * Update a genre by ID.

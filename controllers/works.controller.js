@@ -234,7 +234,6 @@ exports.findAll = async (req, res) => {
     }
 };
 
-
 /**
  * Create a new work along with its initial book edition.
  * 
@@ -310,14 +309,42 @@ exports.create = async (req, res) => {
             });
         }
 
+        // Find the publisher
+        const publisher = await Publisher.findOne({ where: { publisherName: edition.publisherName } });
+        if (!publisher) {
+            return res.status(400).json({
+                success: false,
+                message: 'Publisher does not exist.',
+                links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
+            });
+        }
+
+        // Create initial book edition
+        const { ISBN, synopsis, editionType, languageId, pageNumber, coverImage, publicationDate } = edition;
+        const newEdition = await BookEdition.create({
+            ISBN,
+            title,
+            workId: null, // Temporarily set to null, will update later
+            publisherId: publisher.publisherId,
+            synopsis,
+            editionType,
+            publicationDate,
+            languageId,
+            pageNumber,
+            coverImage
+        }, { transaction: t });
+
         // Create new work
         const newWork = await Work.create({
-/*             averageLiteraryRating: 0, // default value
-            totalReviews: 0, // default value */
+            averageLiteraryRating: 0, // default value
+            totalReviews: 0, // default value
             seriesId,
             seriesOrder,
-            primaryEditionISBN: edition.ISBN
+            primaryEditionISBN: ISBN
         }, { transaction: t });
+
+        // Update the workId in the BookEdition now that the Work is created
+        await newEdition.update({ workId: newWork.workId }, { transaction: t });
 
         // Associate authors
         for (const authorName of authors) {
@@ -330,32 +357,6 @@ exports.create = async (req, res) => {
             const genre = await Genre.findOne({ where: { genreName } });
             await BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
         }
-
-        // Create initial book edition
-        const { ISBN, publisherName, synopsis, editionType, languageId, pageNumber, coverImage, publicationDate } = edition;
-
-        // Find the publisher
-        const publisher = await Publisher.findOne({ where: { publisherName } });
-        if (!publisher) {
-            return res.status(400).json({
-                success: false,
-                message: 'Publisher does not exist.',
-                links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
-            });
-        }
-
-        await BookEdition.create({
-            ISBN,
-            workId: newWork.workId,
-            publisherId: publisher.publisherId,
-            title,
-            synopsis,
-            editionType,
-            publicationDate,
-            languageId,
-            pageNumber,
-            coverImage
-        }, { transaction: t });
 
         await t.commit();
 

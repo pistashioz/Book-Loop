@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-    // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -28,7 +28,6 @@ sequelize.authenticate()
 
 const db = {};
 db.sequelize = sequelize;
-
 // Load models
 db.User = require('./user.model.js')(sequelize, DataTypes);
 db.UserConfiguration = require('./userConfiguration.model.js')(sequelize, DataTypes);
