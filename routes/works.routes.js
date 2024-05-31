@@ -19,15 +19,20 @@ router.route('/')
     .get(verifyToken, isAdmin, workController.findAll)
     .post(verifyToken, isAdmin, workController.create);
 
+    router.route('/editions')
+    .get(workController.getEditions);
+
+
 // Routes to handle operations on a specific work by ID
 router.route('/:workId')
     .get(verifyToken, isAdmin, workController.findWork)
     .patch(verifyToken, isAdmin, workController.updateWorkById)
     .delete(verifyToken, isAdmin, workController.removeWorkById);
 
+
+
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
-    .get( workController.getEditions)
     .post(verifyToken, isAdmin, workController.addEdition);
 
     router.route('/:workId/editions/:editionISBN/contributors')

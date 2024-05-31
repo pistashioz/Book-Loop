@@ -65,7 +65,7 @@ exports.findAll = async (req, res) => {
         
         // Sorting
         if (sortBy && sortOrder) {
-            orderClause.push([Sequelize.col(sortBy), sortOrder]);
+            orderClause.push([Sequelize.col(sortBy), sortOrder.toUpperCase()]);
         }
         
         // Filter by genres
@@ -395,20 +395,20 @@ exports.addAuthor = async (req, res) => {
     try {
         const { workId } = req.params;
         const { authors } = req.body;
-
+        
         // Check if work exists
         const work = await Work.findByPk(workId);
         if (!work) {
             await t.rollback();
             return res.status(404).json({ success: false, message: 'Work not found.' });
         }
-
+        
         // Validate and associate authors
         for (const authorName of authors) {
             const existingAuthor = await Person.findOne({
                 where: { personName: authorName }
             });
-
+            
             if (!existingAuthor) {
                 await t.rollback();
                 return res.status(400).json({
@@ -417,14 +417,14 @@ exports.addAuthor = async (req, res) => {
                     links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
                 });
             }
-
+            
             const authorRole = await PersonRole.findOne({
                 where: {
                     personId: existingAuthor.personId,
                     roleId: 1 // '1' is the roleId for 'author'
                 }
             });
-
+            
             if (!authorRole) {
                 await t.rollback();
                 return res.status(400).json({
@@ -433,12 +433,12 @@ exports.addAuthor = async (req, res) => {
                     links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
                 });
             }
-
+            
             // Check if the author is already associated with the work
             const existingAssociation = await BookAuthor.findOne({
                 where: { workId: work.workId, personId: existingAuthor.personId }
             });
-
+            
             if (existingAssociation) {
                 await t.rollback();
                 return res.status(400).json({
@@ -446,12 +446,12 @@ exports.addAuthor = async (req, res) => {
                     message: `Author "${authorName}" is already associated with this work.`
                 });
             }
-
+            
             await BookAuthor.create({ workId: work.workId, personId: existingAuthor.personId }, { transaction: t });
         }
-
+        
         await t.commit();
-
+        
         res.status(201).json({ success: true, message: 'Authors added to work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -531,10 +531,10 @@ exports.addGenre = async (req, res) => {
         if (!work) {
             return res.status(404).json({ success: false, message: 'Work not found.' });
         }
-
+        
         let nonexistentGenres = [];
         let alreadyAssociatedGenres = [];
-
+        
         // Validate and associate genres
         for (const genreName of genres) {
             const existingGenre = await Genre.findOne({ where: { genreName } });
@@ -542,28 +542,28 @@ exports.addGenre = async (req, res) => {
                 nonexistentGenres.push(genreName);
                 continue;
             }
-
+            
             // Check if the genre is already associated with the work
             const existingAssociation = await BookGenre.findOne({ where: { workId, genreId: existingGenre.genreId } });
             if (existingAssociation) {
                 alreadyAssociatedGenres.push(genreName);
                 continue;
             }
-
+            
             await BookGenre.create({ workId: work.workId, genreId: existingGenre.genreId }, { transaction: t });
         }
-
+        
         if (nonexistentGenres.length > 0 || alreadyAssociatedGenres.length > 0) {
             let errorMessages = [];
-
+            
             if (nonexistentGenres.length > 0) {
                 errorMessages.push(`Genre(s) "${nonexistentGenres.join('", "')}" do not exist.`);
             }
-
+            
             if (alreadyAssociatedGenres.length > 0) {
                 errorMessages.push(`Genre(s) "${alreadyAssociatedGenres.join('", "')}" are already associated with this work.`);
             }
-
+            
             return res.status(400).json({
                 success: false,
                 message: errorMessages.join(' '),
@@ -572,9 +572,9 @@ exports.addGenre = async (req, res) => {
                 ]
             });
         }
-
+        
         await t.commit();
-
+        
         res.status(201).json({ success: true, message: 'Genres added to work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -635,8 +635,6 @@ exports.removeGenre = async (req, res) => {
     }
 };
 
-
-
 /**
 * Retrieve a specific work by ID with all associated information.
 * 
@@ -649,7 +647,7 @@ exports.findWork = async (req, res) => {
         const { workId } = req.params;
         const { page = 1, limit = 5 } = req.query;
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-
+        
         // Fetch the work with primary edition, authors, genres, series info, and average rating
         const work = await Work.findByPk(workId, {
             include: [
@@ -691,14 +689,14 @@ exports.findWork = async (req, res) => {
                 }
             ]
         });
-
+        
         if (!work) {
             return res.status(404).json({ success: false, message: `No work found with id ${workId}` });
         }
-
+        
         // Fetch the count of editions
         const editionCount = await BookEdition.count({ where: { workId } });
-
+        
         // Fetch other editions with pagination
         const otherEditions = await BookEdition.findAll({
             where: { workId, ISBN: { [Op.ne]: work.primaryEditionISBN } },
@@ -715,7 +713,7 @@ exports.findWork = async (req, res) => {
             offset: parseInt(offset, 10),
             raw: false,
         });
-
+        
         // Prepare the response data
         const responseData = {
             workId: work.workId,
@@ -747,7 +745,7 @@ exports.findWork = async (req, res) => {
                 language: edition.Language.languageName
             }))
         };
-
+        
         return res.json({
             success: true,
             data: responseData,
@@ -771,8 +769,6 @@ exports.findWork = async (req, res) => {
     }
 };
 
-
-
 /**
 * Update a specific work by ID.
 * 
@@ -784,12 +780,26 @@ exports.updateWorkById = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
         const { workId } = req.params;
-        const { originalTitle, firstPublishedDate, seriesId, seriesOrder } = req.body;
+        const { seriesId, seriesOrder } = req.body;
         
         // Check if the work exists
-        const foundWork = await Work.findOne({ where: { workId } });
+        const foundWork = await Work.findOne({
+            where: { workId },
+            include: [
+                {
+                    model: BookEdition,
+                    as: 'PrimaryEdition',
+                    attributes: ['title', 'publicationDate'],
+                }
+            ]
+        });
         if (!foundWork) {
-            return res.status(404).json({ success: false, message: `Work with ID ${workId} not found.` });
+            await t.rollback();
+            return res.status(404).json({
+                success: false,
+                message: `Work with ID ${workId} not found.`,
+                links: [{ rel: "create-work", href: "/works", method: "POST" }]
+            });
         }
         
         // Prepare work updates
@@ -805,13 +815,19 @@ exports.updateWorkById = async (req, res) => {
         
         if (seriesId !== undefined || seriesOrder !== undefined) {
             if ((seriesId === undefined || seriesId === null) && (seriesOrder !== undefined && seriesOrder !== null)) {
+                await t.rollback();
                 return res.status(400).json({ success: false, message: 'Cannot set seriesOrder without seriesId.' });
             }
             
             if (seriesId !== undefined && seriesId !== null) {
                 const foundSeries = await db.BookInSeries.findOne({ where: { seriesId } });
                 if (!foundSeries) {
-                    return res.status(400).json({ success: false, message: 'Series does not exist.', links: [{ rel: "create-series", href: "/book-in-series", method: "POST" }] });
+                    await t.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Series does not exist.',
+                        links: [{ rel: "create-series", href: "/book-in-series", method: "POST" }]
+                    });
                 }
                 
                 if (foundWork.seriesId === seriesId && foundWork.seriesOrder === seriesOrder) {
@@ -819,7 +835,12 @@ exports.updateWorkById = async (req, res) => {
                 } else {
                     const conflictingWork = await Work.findOne({ where: { seriesId, seriesOrder } });
                     if (conflictingWork && conflictingWork.workId !== workId) {
-                        return res.status(400).json({ success: false, message: `Another work with seriesOrder ${seriesOrder} already exists in this series.`, links: [{ rel: "conflicting-work", href: `/works/${conflictingWork.workId}`, method: "GET" }] });
+                        await t.rollback();
+                        return res.status(400).json({
+                            success: false,
+                            message: `Another work with seriesOrder ${seriesOrder} already exists in this series.`,
+                            links: [{ rel: "conflicting-work", href: `/works/${conflictingWork.workId}`, method: "GET" }]
+                        });
                     }
                     
                     // Check for revisions needed
@@ -828,23 +849,32 @@ exports.updateWorkById = async (req, res) => {
                     workUpdates.seriesId = seriesId;
                     workUpdates.seriesOrder = seriesOrder;
                     
-                    const previousSeriesWorks = previousSeriesId ? await Work.findAll({ where: { seriesId: previousSeriesId } }) : [];
-                    const worksInSeries = seriesId ? await Work.findAll({
-                        where: { seriesId },
+                    const previousSeriesWorks = previousSeriesId ? await Work.findAll({
+                        where: { seriesId: previousSeriesId },
                         include: [{
-                            model: db.BookInSeries,
-                            as: 'BookInSeries',
-                            attributes: ['seriesName'],
-                            raw: true,
+                            model: BookEdition,
+                            as: 'PrimaryEdition',
+                            attributes: ['title', 'publicationDate']
                         }]
                     }) : [];
                     
-                    
-                    
+                    const worksInSeries = seriesId ? await Work.findAll({
+                        where: { seriesId },
+                        include: [{
+                            model: BookEdition,
+                            as: 'PrimaryEdition',
+                            attributes: ['title', 'publicationDate']
+                        }, {
+                            model: db.BookInSeries,
+                            as: 'BookInSeries',
+                            attributes: ['seriesName']
+                        }]
+                    }) : [];
                     
                     seriesUpdated = true;
                     
                     await Work.update(workUpdates, { where: { workId }, transaction: t });
+                    
                     await t.commit();
                     
                     // Filter out the updated work from previousSeriesWorks if seriesId remains the same
@@ -860,8 +890,8 @@ exports.updateWorkById = async (req, res) => {
                             },
                             works: previousSeriesWorks.map(work => ({
                                 workId: work.workId,
-                                originalTitle: work.originalTitle,
-                                firstPublishedDate: work.firstPublishedDate,
+                                title: work.PrimaryEdition.title,
+                                publicationDate: work.PrimaryEdition.publicationDate,
                                 averageLiteraryRating: work.averageLiteraryRating,
                                 seriesOrder: work.seriesOrder
                             }))
@@ -873,16 +903,16 @@ exports.updateWorkById = async (req, res) => {
                             },
                             works: newSeriesWorks.map(work => ({
                                 workId: work.workId,
-                                originalTitle: work.originalTitle,
-                                firstPublishedDate: work.firstPublishedDate,
+                                title: work.PrimaryEdition.title,
+                                publicationDate: work.PrimaryEdition.publicationDate,
                                 averageLiteraryRating: work.averageLiteraryRating,
                                 seriesOrder: work.seriesOrder
                             }))
                         },
                         updatedWork: {
                             workId: foundWork.workId,
-                            originalTitle: originalTitle || foundWork.originalTitle,
-                            firstPublishedDate: firstPublishedDate || foundWork.firstPublishedDate,
+                            title: foundWork.PrimaryEdition.title,
+                            publicationDate: foundWork.PrimaryEdition.publicationDate,
                             averageLiteraryRating: foundWork.averageLiteraryRating,
                             seriesOrder: seriesOrder
                         }
@@ -891,33 +921,8 @@ exports.updateWorkById = async (req, res) => {
             }
         }
         
-        if (originalTitle) {
-            workUpdates.originalTitle = originalTitle;
-        }
-        if (firstPublishedDate) {
-            workUpdates.firstPublishedDate = firstPublishedDate;
-        }
-        
         // Update the work fields
         await Work.update(workUpdates, { where: { workId }, transaction: t });
-        
-        // Reflect changes in Book Editions
-        if (originalTitle || firstPublishedDate) {
-            const updatedFields = {};
-            if (originalTitle) updatedFields.title = originalTitle;
-            if (firstPublishedDate) updatedFields.publicationDate = firstPublishedDate;
-            
-            // Fetch book editions that match originalTitle and firstPublishedDate before the update
-            const originalTitleBeforeUpdate = foundWork.previous('originalTitle');
-            const firstPublishedDateBeforeUpdate = foundWork.previous('firstPublishedDate');
-            const relevantEditions = await BookEdition.findAll({
-                where: { workId, title: originalTitleBeforeUpdate, publicationDate: firstPublishedDateBeforeUpdate }
-            });
-            
-            for (const edition of relevantEditions) {
-                await edition.update(updatedFields, { transaction: t });
-            }
-        }
         
         await t.commit();
         
@@ -935,6 +940,10 @@ exports.updateWorkById = async (req, res) => {
             const worksInSeries = await Work.findAll({
                 where: { seriesId },
                 include: [{
+                    model: BookEdition,
+                    as: 'PrimaryEdition',
+                    attributes: ['title', 'publicationDate']
+                }, {
                     model: db.BookInSeries,
                     as: 'BookInSeries',
                     attributes: ['seriesName']
@@ -951,23 +960,19 @@ exports.updateWorkById = async (req, res) => {
                 },
                 works: filteredWorksInSeries.map(work => ({
                     workId: work.workId,
-                    originalTitle: work.originalTitle,
-                    firstPublishedDate: work.firstPublishedDate,
+                    title: work.PrimaryEdition.title,
+                    publicationDate: work.PrimaryEdition.publicationDate,
                     averageLiteraryRating: work.averageLiteraryRating,
                     seriesOrder: work.seriesOrder
                 }))
             };
         }
         
-        // Provide HATEOAS link to view all editions for revision if originalTitle or firstPublishedDate were updated
-        if (originalTitle || firstPublishedDate) {
-            response.message += " Please review the book editions.";
-            response.links = [{ rel: "review-editions", href: `/works/${workId}/editions`, method: "GET" }];
-        }
-        
         return res.status(200).json(response);
     } catch (err) {
-        await t.rollback();
+        if (t.finished !== 'commit') {
+            await t.rollback();
+        }
         console.error("Error updating work:", err);
         if (err instanceof ValidationError) {
             return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
@@ -975,6 +980,7 @@ exports.updateWorkById = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while updating the work." });
     }
 };
+
 
 /**
 * Remove a specific work by ID.
@@ -1008,61 +1014,169 @@ exports.removeWorkById = async (req, res) => {
     }
 };
 
-// Get editions of a specific work by ID with pagination
+/**
+ * Retrieve all editions with optional filtering, pagination, and additional information.
+ *
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.getEditions = async (req, res) => {
     try {
-        const { workId } = req.params;
-        const { all, page = 1, limit = all ? 10 : 5 } = req.query; 
-        const offset = (page - 1) * limit;
+        const { 
+            title, 
+            editionType, 
+            publisherName, 
+            publicationDate, 
+            pageNumber, 
+            language, 
+            authors, 
+            sortBy = 'publicationDate', 
+            sortOrder = 'DESC',
+            page = 1, 
+            limit = 5 
+        } = req.query;
         
-        if (!workId) {
-            return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
+        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
+        // Build the filtering conditions
+        const whereClause = {};
+        if (title) {
+            whereClause.title = { [Op.like]: `%${title}%` };
+        }
+        if (editionType) {
+            whereClause.editionType = editionType;
+        }
+        if (publicationDate) {
+            whereClause.publicationDate = publicationDate;
+        }
+        if (pageNumber) {
+            whereClause.pageNumber = pageNumber;
+        }
+
+        let workIds = [];
+        // Filter by authors
+        if (authors) {
+            const authorWorkIds = await BookAuthor.findAll({
+                attributes: ['workId'],
+                include: [{
+                    model: Person,
+                    as: 'Person',
+                    where: { personName: { [Op.like]: `%${authors}%` } }
+                }]
+            });
+            console.log("authorWorkIds:", authorWorkIds);
+      
+            if (workIds.length > 0) {
+                const authorWorkIdsList = authorWorkIds.map(author => author.workId);
+                workIds = workIds.filter(workId => authorWorkIdsList.includes(workId));
+            } else {
+                workIds = authorWorkIds.map(author => author.workId);
+            }
+            whereClause.workId = { [Op.in]: workIds };
         }
         
-        const { count, rows: foundEditions } = await BookEdition.findAndCountAll({
-            where: { workId: { [Op.eq]: workId } },
-            attributes: all? ['ISBN', 'title', 'publisherId', 'publicationDate', 'coverImage', 'editionType', 'pageNumber', 'language'] : ['ISBN', 'title', 'publisherId', 'publicationDate', 'coverImage', 'editionType'],
+ /*        // If workIds array is not empty, add it to the where clause
+        if (workIds.length > 0) {
+            whereClause.workId = { [Op.in]: workIds };
+        }
+ */
+
+        // Build order clause
+        const orderClause = [[sortBy, sortOrder.toUpperCase()]];
+
+        // Fetch book editions with pagination and filtering
+        const { count: groupCounts, rows: foundEditions } = await BookEdition.findAndCountAll({
+            where: whereClause,
+            attributes: [
+                'ISBN', 'title', 'publisherId', 'publicationDate', 'coverImage', 'editionType', 'pageNumber', 'languageId',
+                [Sequelize.literal(`(SELECT COUNT(*) FROM bookEdition WHERE workId = BookEdition.workId)`), 'editionCount']
+            ],
             include: [
                 {
-                    model: db.Publisher,
-                    attributes: ['publisherId', 'publisherName']
+                    model: Publisher,
+                    attributes: ['publisherId', 'publisherName'],
+                    where: publisherName ? { publisherName: { [Op.like]: `%${publisherName}%` } } : {}
                 },
                 {
-                    model: db.Work,
-                    attributes: all ? ['workId','firstPublishedDate'] : ['workId'],
-                    where: { workId }
+                    model: Language,
+                    attributes: ['languageId', 'languageName'],
+                    where: language ? { languageName: language } : {}
+                },
+                {
+                    model: BookContributor,
+                    attributes: ['roleId', 'editionISBN', 'personId'],
+                    include: [
+                        {
+                            model: Person,
+                            attributes: ['personId', 'personName'],
+                        },
+                        {
+                            model: Role,
+                            attributes: ['roleId', 'roleName']
+                        }
+                    ]
+                },
+                {
+                    model: Work,
+                    attributes: ['workId', 'averageLiteraryRating', 'totalReviews'],
+                    include: [{
+                        model: BookAuthor,
+                        as: 'BookAuthors',
+                        attributes: ['workId', 'personId'],
+                        include: [{
+                            model: Person,
+                            as: 'Person',
+                            attributes: ['personId', 'personName'],
+                           // where: authors ? { personName: { [Op.like]: `%${authors}%` } } : {}
+                        }]
+                    }]
                 }
             ],
-            limit,
-            require: false,
-            offset
+            limit: parseInt(limit, 10),
+            offset: offset,
+            group: ['ISBN'],
+            order: orderClause
         });
-        
+
+        const totalEditions = groupCounts.length;
+
         if (foundEditions.length === 0) {
-            return res.status(404).json({ success: false, message: "No book editions found for this work" });
+            return res.status(404).json({ success: false, message: "No book editions found" });
         }
-        
+
+        console.log(foundEditions[0].bookContributors);
+        // Map editions to the desired response format
         const editions = foundEditions.map(edition => ({
             ISBN: edition.ISBN,
             title: edition.title,
             editionType: edition.editionType,
             publisherId: edition.publisherId,
-            publisherName: edition.Publisher.publisherName,
+            publisherName: edition.Publisher ? edition.Publisher.publisherName : null,
             publicationDate: edition.publicationDate,
             coverImage: edition.coverImage,
             pageNumber: edition.pageNumber,
-            language: edition.language,
-            Work: edition.Work
-            // firstPublishedDate: edition.Work ? edition.Work.firstPublishedDate : null
+            language: edition.Language ? edition.Language.languageName : null,
+            authors: edition.Work.BookAuthors.map(bookAuthor => ({
+                personId: bookAuthor.Person.personId,
+                personName: bookAuthor.Person.personName
+            })),
+            contributors: edition.bookContributors.map(contributor => ({
+                personId: contributor.personId,
+                personName: contributor.person.personName,
+                role: contributor.Role.roleName,
+            })),
+            averageLiteraryRating: edition.Work.averageLiteraryRating || 0,
+            totalReviews: edition.Work.totalReviews || 0,
+            editionCount: edition.getDataValue('editionCount') || 0
         }));
-        
-        const totalPages = Math.ceil(count / limit);
-        
+
+        const totalPages = Math.ceil(totalEditions / parseInt(limit, 10));
+
         return res.status(200).json({
             success: true,
-            message: `Found ${foundEditions.length} book editions`,
-            // editionsCount: foundEditions.length,
-            totalEditions: count,
+            message: `Found ${totalEditions} book editions`,
+            totalEditions: totalEditions,
             totalPages,
             currentPage: parseInt(page, 10),
             editions
@@ -1075,6 +1189,7 @@ exports.getEditions = async (req, res) => {
         });
     }
 };
+
 
 
 /**
@@ -1190,8 +1305,6 @@ exports.addEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the book edition" });
     }
 };
-
-
 
 /**
 * Add contributors to a book edition.
@@ -1333,7 +1446,6 @@ exports.removeContributor = async (req, res) => {
     }
 };
 
-
 /**
 * Get a specific book edition by work ID and book edition ID (ISBN).
 * 
@@ -1446,7 +1558,6 @@ exports.getBookEdition = async (req, res) => {
         });
     }
 };
-
 
 /**
 * Update a specific book edition by work ID and book edition ID (ISBN).
@@ -1648,9 +1759,6 @@ exports.getReviews = async (req, res) => {
     }
 };
 
-
-
-
 /**
 * Add a review to a specific work by ID.
 * 
@@ -1719,7 +1827,6 @@ exports.addReview = async (req, res) => {
     }
 };
 
-
 /**
 * Update a review for a specific work by ID.
 * 
@@ -1779,7 +1886,6 @@ exports.updateReview = async (req, res) => {
     }
 };
 
-
 // Get a specific review by work ID and review ID
 exports.getReview = async (req, res) => {
     try {
@@ -1801,19 +1907,7 @@ exports.getReview = async (req, res) => {
     }
 };
 
-/**
-* Deletes a literary review for a specific work and user.
-*
-* @param {Object} req - The request object containing parameters and user information.
-* @param {string} req.params.workId - The ID of the work.
-* @param {string} req.params.literaryReviewId - The ID of the literary review.
-* @param {string} req.userId - The ID of the user making the request.
-* @param {Object} res - The response object to send back to the client.
-*
-* @returns {Object} - The response object containing success status, message, and any additional data.
-*
-* @throws {Error} - If an error occurs during the deletion process.
-*/
+//Deletes a literary review for a specific work and user.
 exports.deleteReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
