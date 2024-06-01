@@ -19,9 +19,8 @@ router.route('/')
     .get(verifyToken, isAdmin, workController.findAll)
     .post(verifyToken, isAdmin, workController.create);
 
-    router.route('/editions')
+router.route('/editions')
     .get(workController.getEditions);
-
 
 // Routes to handle operations on a specific work by ID
 router.route('/:workId')
@@ -29,19 +28,17 @@ router.route('/:workId')
     .patch(verifyToken, isAdmin, workController.updateWorkById)
     .delete(verifyToken, isAdmin, workController.removeWorkById);
 
-
-
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
     .post(verifyToken, isAdmin, workController.addEdition);
 
-    router.route('/:workId/editions/:editionISBN/contributors')
+router.route('/:workId/editions/:editionUUID/contributors')
     .post(verifyToken, isAdmin, workController.addContributor)
     .delete(verifyToken, isAdmin, workController.removeContributor);
 
-router.route('/:workId/editions/:bookEditionId') /// falta esta
+router.route('/:workId/editions/:editionUUID')
     .get(workController.getBookEdition)
-    .patch(verifyToken, isAdmin,workController.updateBookEdition)
+    .patch(verifyToken, isAdmin, workController.updateBookEdition)
     .delete(verifyToken, isAdmin, workController.removeBookEdition);
 
 // Routes to handle operations on reviews of a specific work by ID
@@ -71,15 +68,15 @@ router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
     .post(verifyToken, workController.likeComment)
     .delete(verifyToken, workController.removeLikeComment);
 
-    // Routes to handle operations on authors and genres of a specific work by ID
+// Routes to handle operations on authors and genres of a specific work by ID
 router.route('/:workId/authors')
-.post(verifyToken, isAdmin, workController.addAuthor)
+    .post(verifyToken, isAdmin, workController.addAuthor);
 
 router.route('/:workId/authors/:authorId')
     .delete(verifyToken, isAdmin, workController.removeAuthor);
 
 router.route('/:workId/genres')
-.post(verifyToken, isAdmin, workController.addGenre);
+    .post(verifyToken, isAdmin, workController.addGenre);
 
 router.route('/:workId/genres/:genreId')
     .delete(verifyToken, isAdmin, workController.removeGenre);
@@ -88,6 +85,5 @@ router.route('/:workId/genres/:genreId')
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested work resource could not be found. Please check the URL and API documentation.' });
 });
-
 
 module.exports = router;

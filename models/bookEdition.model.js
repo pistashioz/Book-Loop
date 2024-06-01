@@ -1,13 +1,18 @@
+const { v4: uuidv4 } = require('uuid');
 const { getEnumValues } = require('../utils/sequelizeHelpers');
 
 module.exports = (sequelize, DataTypes) => {
   const BookEdition = sequelize.define('BookEdition', {
+    UUID: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     ISBN: {
       type: DataTypes.STRING(20),
-      primaryKey: true,
       validate: {
         isValidISBN(value) {
-          if (!/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
+          if (value && !/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
             throw new Error('Invalid ISBN format.');
           }
         }
@@ -17,16 +22,16 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
-        model: 'work', 
-        key: 'workId' 
+        model: 'work',
+        key: 'workId'
       }
     },
     publisherId: {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'publisher', 
-        key: 'publisherId' 
+        model: 'publisher',
+        key: 'publisherId'
       }
     },
     title: {
@@ -74,6 +79,9 @@ module.exports = (sequelize, DataTypes) => {
     tableName: 'bookEdition',
     timestamps: false,
     freezeTableName: true,
+    indexes: [
+      { unique: true, fields: ['ISBN'] },
+    ]
   });
   
   return BookEdition;

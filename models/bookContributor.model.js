@@ -1,12 +1,12 @@
 module.exports = (sequelize, DataTypes) => {
     const BookContributor = sequelize.define("bookContributor", {
-        editionISBN: {
-            type: DataTypes.STRING(20),
+        editionUUID: {
+            type: DataTypes.CHAR(36),
             primaryKey: true,
             allowNull: false,
             references: {
                 model: 'bookEdition',
-                key: 'ISBN'
+                key: 'UUID'
             },
         },
         personId: {

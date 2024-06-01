@@ -20,10 +20,16 @@ const {
 const { ValidationError, Op, Sequelize } = require('sequelize');
 
 
-// Fetch all works with pagination, average rating, and associated data.
-// Allows filtering by genres, authors, dates, languages, and average literary rating.
-// Also allows sorting by publication date, average rating, or total reviews.
 
+/**
+ * Fetch all works with pagination, average rating, and associated data.
+ * Allows filtering by genres, authors, dates, languages, and average literary rating.
+ * Also allows sorting by publication date, average rating, or total reviews.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with works data and pagination info
+ */
 exports.findAll = async (req, res) => {
     try {
         // Extract query parameters
@@ -41,20 +47,20 @@ exports.findAll = async (req, res) => {
             sortOrder = 'DESC' 
         } = req.query;
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-        
+
         // Build filtering conditions
         let whereClause = {};
         let havingClause = {};
         let orderClause = [];
         let workIds = [];
-        
+
         // Filter by rating
         if (minRating || maxRating) {
             havingClause.averageLiteraryRating = {};
             if (minRating) havingClause.averageLiteraryRating[Op.gte] = parseFloat(minRating);
             if (maxRating) havingClause.averageLiteraryRating[Op.lte] = parseFloat(maxRating);
         }
-        
+
         // Filter by publication date in the PrimaryEdition table
         let primaryEditionWhereClause = {};
         if (startDate || endDate) {
@@ -62,12 +68,12 @@ exports.findAll = async (req, res) => {
             if (startDate) primaryEditionWhereClause.publicationDate[Op.gte] = startDate;
             if (endDate) primaryEditionWhereClause.publicationDate[Op.lte] = endDate;
         }
-        
+
         // Sorting
         if (sortBy && sortOrder) {
             orderClause.push([Sequelize.col(sortBy), sortOrder.toUpperCase()]);
         }
-        
+
         // Filter by genres
         if (genres) {
             const genreWorkIds = await BookGenre.findAll({
@@ -80,7 +86,7 @@ exports.findAll = async (req, res) => {
             });
             workIds = genreWorkIds.map(genre => genre.workId);
         }
-        
+
         // Filter by authors
         if (authors) {
             const authorWorkIds = await BookAuthor.findAll({
@@ -98,12 +104,12 @@ exports.findAll = async (req, res) => {
                 workIds = authorWorkIds.map(author => author.workId);
             }
         }
-        
+
         // If workIds array is not empty, add it to the where clause
         if (workIds.length > 0) {
             whereClause.workId = { [Op.in]: workIds };
         }
-        
+
         // Count total works based on filters
         const totalWorks = await Work.count({
             where: whereClause,
@@ -122,7 +128,7 @@ exports.findAll = async (req, res) => {
                 }
             ]
         });
-        
+
         // Fetch main works with pagination
         const works = await Work.findAll({
             attributes: [
@@ -131,7 +137,7 @@ exports.findAll = async (req, res) => {
                 'totalReviews',
                 'seriesId',
                 'seriesOrder',
-                'primaryEditionISBN'
+                'primaryEditionUUID'
             ],
             where: whereClause,
             include: [
@@ -162,12 +168,12 @@ exports.findAll = async (req, res) => {
             limit: parseInt(limit, 10),
             offset: parseInt(offset, 10)
         });
-        
+
         // Handle case where no works are found
         if (works.length === 0) {
             return res.status(404).json({ success: false, message: "No works found" });
         }
-        
+
         // Fetch Genres and Authors for each work separately
         for (let work of works) {
             const genres = await BookGenre.findAll({
@@ -179,7 +185,7 @@ exports.findAll = async (req, res) => {
                 where: { workId: work.workId }
             });
             work.dataValues.Genres = genres.map(genre => genre.Genre);
-            
+
             const authors = await BookAuthor.findAll({
                 include: [{
                     model: Person,
@@ -190,7 +196,7 @@ exports.findAll = async (req, res) => {
             });
             work.dataValues.Authors = authors.map(author => author.Person);
         }
-        
+
         // Map works to the desired response format
         const result = works.map(work => ({
             workId: work.workId,
@@ -214,10 +220,10 @@ exports.findAll = async (req, res) => {
                 { rel: "modify", href: `/works/${work.workId}`, method: "PATCH" }
             ]
         }));
-        
+
         // Calculate total number of pages
         const totalPages = Math.ceil(totalWorks / parseInt(limit, 10));
-        
+
         // Send the response with works data and pagination info
         return res.status(200).json({
             success: true,
@@ -235,31 +241,37 @@ exports.findAll = async (req, res) => {
     }
 };
 
+
 /**
-* Create a new work along with its initial book edition.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Create a new work along with its initial book edition.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.create = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
         const { title, series = {}, seriesOrder = null, authors = [], genres = [], edition } = req.body;
-        
-        if (!edition || !edition.ISBN) {
-            return res.status(400).json({ success: false, message: 'Edition information with ISBN is required.' });
+
+        // Ensure the edition and ISBN are provided for non-audiobook editions
+        if (!edition || (!edition.ISBN && edition.editionType !== 'Audiobook')) {
+            return res.status(400).json({ success: false, message: 'Edition information with ISBN is required for non-audiobook editions.' });
         }
-        
-        // Check for duplicate work using primaryEditionISBN
+
+        // Check for duplicate work using primaryEditionUUID
         const existingWork = await Work.findOne({
-            where: { primaryEditionISBN: edition.ISBN }
+            include: [{
+                model: BookEdition,
+                as: 'PrimaryEdition',
+                where: { ISBN: edition.ISBN }
+            }]
         });
-        
+
         if (existingWork) {
             return res.status(400).json({ success: false, message: 'Work already exists with the same ISBN.' });
         }
-        
+
         // Check and prompt for series creation if needed
         let seriesId = null;
         if (series.name) {
@@ -273,33 +285,47 @@ exports.create = async (req, res) => {
             }
             seriesId = existingSeries.seriesId;
         }
-        
-        // Check and prompt for author creation if needed
+
+        // Collect non-existent authors
+        const nonExistentAuthors = [];
         for (const authorName of authors) {
             const existingAuthor = await Person.findOne({
                 where: { personName: authorName }
             });
             if (!existingAuthor) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Author "${authorName}" does not exist.`,
-                    links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
-                });
+                nonExistentAuthors.push({ personName: authorName });
             }
         }
-        
-        // Check and prompt for genre creation if needed
+
+        if (nonExistentAuthors.length > 0) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: "The following author(s) do not exist:",
+                nonExistentAuthors,
+                links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
+            });
+        }
+
+        // Collect non-existent genres
+        const nonExistentGenres = [];
         for (const genreName of genres) {
             const existingGenre = await Genre.findOne({ where: { genreName } });
             if (!existingGenre) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Genre "${genreName}" does not exist.`,
-                    links: [{ rel: 'create-genre', href: '/book-genres', method: 'POST' }]
-                });
+                nonExistentGenres.push({ genreName });
             }
         }
-        
+
+        if (nonExistentGenres.length > 0) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: "The following genre(s) do not exist:",
+                nonExistentGenres,
+                links: [{ rel: 'create-genre', href: '/book-genres', method: 'POST' }]
+            });
+        }
+
         // Check if the provided languageId exists
         const language = await Language.findOne({ where: { languageId: edition.languageId } });
         if (!language) {
@@ -309,7 +335,7 @@ exports.create = async (req, res) => {
                 links: [{ rel: 'create-language', href: '/languages', method: 'POST' }]
             });
         }
-        
+
         // Find the publisher
         const publisher = await Publisher.findOne({ where: { publisherName: edition.publisherName } });
         if (!publisher) {
@@ -319,7 +345,7 @@ exports.create = async (req, res) => {
                 links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
             });
         }
-        
+
         // Create initial book edition
         const { ISBN, synopsis, editionType, languageId, pageNumber, coverImage, publicationDate } = edition;
         const newEdition = await BookEdition.create({
@@ -334,33 +360,33 @@ exports.create = async (req, res) => {
             pageNumber,
             coverImage
         }, { transaction: t });
-        
+
         // Create new work
         const newWork = await Work.create({
             averageLiteraryRating: 0, // default value
             totalReviews: 0, // default value
             seriesId,
             seriesOrder,
-            primaryEditionISBN: ISBN
+            primaryEditionUUID: newEdition.UUID
         }, { transaction: t });
-        
+
         // Update the workId in the BookEdition now that the Work is created
         await newEdition.update({ workId: newWork.workId }, { transaction: t });
-        
+
         // Associate authors
         for (const authorName of authors) {
             const author = await Person.findOne({ where: { personName: authorName } });
             await BookAuthor.create({ workId: newWork.workId, personId: author.personId }, { transaction: t });
         }
-        
+
         // Associate genres
         for (const genreName of genres) {
             const genre = await Genre.findOne({ where: { genreName } });
             await BookGenre.create({ workId: newWork.workId, genreId: genre.genreId }, { transaction: t });
         }
-        
+
         await t.commit();
-        
+
         res.status(201).json({
             success: true,
             message: 'New work and its initial book edition created successfully',
@@ -1015,12 +1041,12 @@ exports.removeWorkById = async (req, res) => {
 };
 
 /**
- * Retrieve all editions with optional filtering, pagination, and additional information.
- *
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<Object>} JSON response with success status and data
- */
+* Retrieve all editions with optional filtering, pagination, and additional information.
+*
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<Object>} JSON response with success status and data
+*/
 exports.getEditions = async (req, res) => {
     try {
         const { 
@@ -1038,7 +1064,7 @@ exports.getEditions = async (req, res) => {
         } = req.query;
         
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-
+        
         // Build the filtering conditions
         const whereClause = {};
         if (title) {
@@ -1053,7 +1079,7 @@ exports.getEditions = async (req, res) => {
         if (pageNumber) {
             whereClause.pageNumber = pageNumber;
         }
-
+        
         let workIds = [];
         // Filter by authors
         if (authors) {
@@ -1066,7 +1092,7 @@ exports.getEditions = async (req, res) => {
                 }]
             });
             console.log("authorWorkIds:", authorWorkIds);
-      
+            
             if (workIds.length > 0) {
                 const authorWorkIdsList = authorWorkIds.map(author => author.workId);
                 workIds = workIds.filter(workId => authorWorkIdsList.includes(workId));
@@ -1076,15 +1102,10 @@ exports.getEditions = async (req, res) => {
             whereClause.workId = { [Op.in]: workIds };
         }
         
- /*        // If workIds array is not empty, add it to the where clause
-        if (workIds.length > 0) {
-            whereClause.workId = { [Op.in]: workIds };
-        }
- */
-
+        
         // Build order clause
         const orderClause = [[sortBy, sortOrder.toUpperCase()]];
-
+        
         // Fetch book editions with pagination and filtering
         const { count: groupCounts, rows: foundEditions } = await BookEdition.findAndCountAll({
             where: whereClause,
@@ -1105,7 +1126,7 @@ exports.getEditions = async (req, res) => {
                 },
                 {
                     model: BookContributor,
-                    attributes: ['roleId', 'editionISBN', 'personId'],
+                    attributes: ['roleId', 'editionUUID', 'personId'],
                     include: [
                         {
                             model: Person,
@@ -1128,23 +1149,23 @@ exports.getEditions = async (req, res) => {
                             model: Person,
                             as: 'Person',
                             attributes: ['personId', 'personName'],
-                           // where: authors ? { personName: { [Op.like]: `%${authors}%` } } : {}
+                            // where: authors ? { personName: { [Op.like]: `%${authors}%` } } : {}
                         }]
                     }]
                 }
             ],
             limit: parseInt(limit, 10),
             offset: offset,
-            group: ['ISBN'],
+            group: ['UUID'],
             order: orderClause
         });
-
+        
         const totalEditions = groupCounts.length;
-
+        
         if (foundEditions.length === 0) {
             return res.status(404).json({ success: false, message: "No book editions found" });
         }
-
+        
         console.log(foundEditions[0].bookContributors);
         // Map editions to the desired response format
         const editions = foundEditions.map(edition => ({
@@ -1170,9 +1191,9 @@ exports.getEditions = async (req, res) => {
             totalReviews: edition.Work.totalReviews || 0,
             editionCount: edition.getDataValue('editionCount') || 0
         }));
-
+        
         const totalPages = Math.ceil(totalEditions / parseInt(limit, 10));
-
+        
         return res.status(200).json({
             success: true,
             message: `Found ${totalEditions} book editions`,
@@ -1191,14 +1212,6 @@ exports.getEditions = async (req, res) => {
 };
 
 
-
-/**
-* Add a new edition to a specific work by ID.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
 exports.addEdition = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
@@ -1206,28 +1219,32 @@ exports.addEdition = async (req, res) => {
         if (!workId) {
             return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
         }
-        
-        const foundWork = await Work.findOne({ where: { workId } });
+
+        const foundWork = await Work.findByPk(workId);
         if (!foundWork) {
-            return res.status(404).json({ success: false, message: "Work not found" });
+            return res.status(404).json({ success: false, message: "Work not found", links: [{ rel: 'create-work', href: '/works', method: 'POST' }] });
         }
-        
-        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage, contributors = [] } = req.body;
-        
-        if (!ISBN || !publisherName || !title || !synopsis || !editionType || !publicationDate || !language || !pageNumber || !coverImage) {
+
+        const primaryEdition = await BookEdition.findOne({ where: { workId, UUID: foundWork.primaryEditionUUID } });
+
+        const { ISBN, publisherName, title, synopsis, editionType, publicationDate, languageId, pageNumber, coverImage, contributors = [] } = req.body;
+
+        if (!title || !publisherName || !synopsis || !editionType || !publicationDate || !languageId || !pageNumber || !coverImage) {
             return res.status(400).json({ success: false, message: "All fields are required" });
         }
-        
-        // Check for existing ISBN
-        const existingEdition = await BookEdition.findOne({ where: { ISBN } });
-        if (existingEdition) {
-            return res.status(400).json({
-                success: false,
-                message: 'ISBN already in use.',
-                links: [{ rel: 'existing-edition', href: `/works/${existingEdition.workId}/editions/${existingEdition.ISBN}`, method: 'GET' }]
-            });
+
+        // Check for existing ISBN if provided
+        if (ISBN) {
+            const existingEdition = await BookEdition.findOne({ where: { ISBN } });
+            if (existingEdition) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'ISBN already in use.',
+                    links: [{ rel: 'existing-edition', href: `/works/${existingEdition.workId}/editions/${existingEdition.UUID}`, method: 'GET' }]
+                });
+            }
         }
-        
+
         // Check for existing publisher
         const publisher = await Publisher.findOne({ where: { publisherName } });
         if (!publisher) {
@@ -1237,28 +1254,38 @@ exports.addEdition = async (req, res) => {
                 links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
             });
         }
-        
+
         // Validate contributors based on the edition type and language
-        if (foundWork.language !== language && !contributors.some(c => c.roles.includes('translator'))) {
+        if (primaryEdition.languageId !== languageId && !contributors.some(c => c.roles.includes('translator'))) {
             return res.status(400).json({
                 success: false,
                 message: "A translator is required for editions in a different language."
             });
         }
-        
+
         if (editionType === 'Audiobook' && !contributors.some(c => c.roles.includes('narrator'))) {
             return res.status(400).json({
                 success: false,
                 message: "A narrator is required for audiobook editions."
             });
         }
-        
+
         // Create new book edition
         const newBookEdition = await BookEdition.create({
-            ISBN, workId, publisherId: publisher.publisherId, title, synopsis, editionType, publicationDate, language, pageNumber, coverImage
+            ISBN,
+            workId,
+            publisherId: publisher.publisherId,
+            title,
+            synopsis,
+            editionType,
+            publicationDate,
+            languageId,
+            pageNumber,
+            coverImage
         }, { transaction: t });
-        
-        // Validate and associate contributors
+
+        // Collect non-existent contributors
+        const nonExistentContributors = [];
         for (const contributor of contributors) {
             const { personName, roles } = contributor;
             if (!personName || !roles) {
@@ -1270,27 +1297,40 @@ exports.addEdition = async (req, res) => {
             }
             const person = await Person.findOne({ where: { personName } });
             if (!person) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Contributor "${personName}" does not exist.`,
-                    links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
-                });
+                nonExistentContributors.push({ personName });
+                continue;
             }
             const validRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
             if (validRoles.length !== roles.length) {
                 return res.status(400).json({ success: false, message: `Some roles are invalid.` });
             }
             for (const role of validRoles) {
-                await BookContributor.create({ editionISBN: newBookEdition.ISBN, personId: person.personId, roleId: role.roleId }, { transaction: t });
+                await BookContributor.create({ editionUUID: newBookEdition.UUID, personId: person.personId, roleId: role.roleId }, { transaction: t });
             }
         }
-        
+
+        if (nonExistentContributors.length > 0) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: "The following contributor(s) do not exist:",
+                nonExistentContributors,
+                links: [{ rel: 'create-person', href: '/persons', method: 'POST' }]
+            });
+        }
+
         await t.commit();
-        
+
         res.status(201).json({
             success: true,
             message: 'New book edition created successfully',
             book: newBookEdition,
+            links: [
+                { rel: 'get-edition', href: `/works/${newBookEdition.workId}/editions/${newBookEdition.UUID}`, method: 'GET' },
+                { rel: 'edit-edition', href: `/works/${newBookEdition.workId}/editions/${newBookEdition.UUID}`, method: 'PATCH' },
+                { rel: 'remove-edition', href: `/works/${newBookEdition.workId}/editions/${newBookEdition.UUID}`, method: 'DELETE' },
+                { rel: 'post-editions', href: `/works/${newBookEdition.workId}/editions`, method: 'POST' }
+            ]
         });
     } catch (err) {
         await t.rollback();
@@ -1305,6 +1345,10 @@ exports.addEdition = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the book edition" });
     }
 };
+
+
+
+
 
 /**
 * Add contributors to a book edition.

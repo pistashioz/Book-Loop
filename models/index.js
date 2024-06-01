@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-    // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    //return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -112,14 +112,14 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
 
-db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionISBN' });
-db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionISBN' });
+db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionUUID' });
+db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionUUID' });
 
 db.Language.hasMany(db.BookEdition, { foreignKey: 'languageId', onDelete: 'RESTRICT' }); 
 db.BookEdition.belongsTo(db.Language, { foreignKey: 'languageId' });
 
-db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionISBN', onDelete: 'CASCADE' });
-db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionISBN' });
+db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionUUID', onDelete: 'CASCADE' });
+db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionUUID' });
 
 db.Person.hasMany(db.BookContributor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
 db.BookContributor.belongsTo(db.Person, { foreignKey: 'personId' });
@@ -139,8 +139,8 @@ db.BookAuthor.belongsTo(db.Person, { foreignKey: 'personId', as: 'Person' });
 db.User.hasMany(db.Listing, { foreignKey: 'sellerUserId', onDelete: 'RESTRICT' });
 db.Listing.belongsTo(db.User, { foreignKey: 'sellerUserId' });
 
-db.BookEdition.hasMany(db.Listing, { foreignKey: 'ISBN', onDelete: 'RESTRICT' });
-db.Listing.belongsTo(db.BookEdition, { foreignKey: 'ISBN' });
+db.BookEdition.hasMany(db.Listing, { foreignKey: 'editionUUID', onDelete: 'RESTRICT' });
+db.Listing.belongsTo(db.BookEdition, { foreignKey: 'editionUUID' });
 
 db.Listing.hasMany(db.ListingImage, { foreignKey: 'listingId', onDelete: 'CASCADE' });
 db.ListingImage.belongsTo(db.Listing, { foreignKey: 'listingId' });
