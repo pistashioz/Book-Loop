@@ -17,7 +17,7 @@ const {
     PersonRole,
     BookContributor 
 } = db;
-const { ValidationError, Op, Sequelize } = require('sequelize');
+const { ValidationError, Op, Sequelize, fn, col, literal } = require('sequelize');
 
 
 
@@ -1631,7 +1631,6 @@ exports.removeContributor = async (req, res) => {
 };
 
 
-
 /**
 * Get a specific book edition by work ID and book edition ID (UUID).
 * 
@@ -1642,7 +1641,9 @@ exports.removeContributor = async (req, res) => {
 exports.getBookEdition = async (req, res) => {
     try {
         const { workId, editionUUID } = req.params;
-        
+        const { page = 1, limit = 5 } = req.query;
+        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
         if (!workId || !editionUUID) {
             return res.status(400).json({ 
                 success: false, 
@@ -1652,7 +1653,6 @@ exports.getBookEdition = async (req, res) => {
         
         const bookEdition = await BookEdition.findOne({
             where: { workId, UUID: editionUUID },
-            // attributes: ['UUID', 'ISBN', 'title', 'publicationDate', 'synopsis', 'editionType', 'languageId', 'pageNumber', 'coverImage'],
             include: [
                 {
                     model: Publisher,
@@ -1660,7 +1660,7 @@ exports.getBookEdition = async (req, res) => {
                 },
                 {
                     model: Work,
-                    attributes: ['workId', 'seriesId', 'seriesOrder', 'primaryEditionUUID'],
+                    attributes: ['workId', 'seriesId', 'seriesOrder', 'primaryEditionUUID', 'averageLiteraryRating', 'totalReviews'],
                     include: [
                         {
                             model: BookInSeries,
@@ -1683,11 +1683,6 @@ exports.getBookEdition = async (req, res) => {
                             as: 'PrimaryEdition',
                             attributes: ['publicationDate', 'pageNumber', 'editionType'],
                             where: { UUID: Sequelize.col('Work.primaryEditionUUID') }
-                        },
-                        {
-                            model: BookInSeries,
-                            as: 'BookInSeries',
-                            attributes: ['seriesId','seriesName']
                         },
                         {
                             model: BookGenre,
@@ -1728,7 +1723,46 @@ exports.getBookEdition = async (req, res) => {
             });
         }
 
-        console.log(bookEdition.Work.BookGenres[0].Genre.genreName);
+        const editionCount = await BookEdition.count({ where: { workId } });
+        
+        // Fetch other editions with pagination
+        const otherEditions = await BookEdition.findAll({
+            where: { workId, UUID: { [Op.ne]: editionUUID } },
+            attributes: ['UUID', 'title', 'coverImage', 'pageNumber', 'publicationDate'],
+            include: [
+                {
+                    model: Language,
+                    attributes: ['languageName']
+                },
+                {
+                    model: Publisher,
+                    attributes: ['publisherId', 'publisherName']
+                }
+            ],
+            order: [['publicationDate', 'DESC']], // Sorted by publication date in descending order
+            limit: parseInt(limit, 10),
+            offset: offset,
+            raw: false,
+        });
+
+        // Fetch literary reviews and calculate rating distribution
+        const ratingData = await LiteraryReview.findAll({
+            where: { workId },
+            attributes: [
+                [literal('ROUND(literaryRating)'), 'rating'],
+                [fn('COUNT', col('literaryRating')), 'count']
+            ],
+            group: ['rating'],
+            raw: true
+        });
+
+        const totalRatings = ratingData.reduce((sum, item) => sum + parseInt(item.count, 10), 0);
+        const ratingDistribution = ratingData.map(item => ({
+            stars: parseInt(item.rating, 10),
+            count: parseInt(item.count, 10),
+            percentage: ((item.count / totalRatings) * 100).toFixed(2) + '%'
+        }));
+
         const response = {
             success: true,
             bookEdition: {
@@ -1743,45 +1777,50 @@ exports.getBookEdition = async (req, res) => {
                 coverImage: bookEdition.coverImage,
                 publisherId: bookEdition.Publisher.publisherId,
                 publisherName: bookEdition.Publisher.publisherName,
+                averageLiteraryRating: bookEdition.Work.averageLiteraryRating,
+                totalReviews: bookEdition.Work.totalReviews,
+                ratingDistribution,
                 Work: {
                     workId: bookEdition.Work.workId,
                     firstPublishedDate: bookEdition.Work.PrimaryEdition.publicationDate,
                     authors: bookEdition.Work.BookAuthors.map(ba => ({
-                        personId: ba.dataValues.Person.personId,
-                        personName: ba.dataValues.Person.personName
+                        personId: ba.Person.personId,
+                        personName: ba.Person.personName
                     })),
                     pageNumber: bookEdition.Work.PrimaryEdition.pageNumber,
                     editionType: bookEdition.Work.PrimaryEdition.editionType,
                     Series: bookEdition.Work.BookInSeries ? {
                         seriesId: bookEdition.Work.BookInSeries.seriesId,
                         seriesName: bookEdition.Work.BookInSeries.seriesName,
-                        /* seriesDescription: bookEdition.Work.BookInSeries.seriesDescription,
-                        seriesOrder: bookEdition.Work.seriesOrder */
+                        seriesDescription: bookEdition.Work.BookInSeries.seriesDescription,
+                        seriesOrder: bookEdition.Work.seriesOrder
                     } : null,
-                    Genres: bookEdition.Work.BookGenres ? {
-                        genres: bookEdition.Work.BookGenres.map(bg => ({
-                            genreId: bg.genreId,
-                            genreName: bg.Genre.genreName
-                        }))
-                    } : null,
+                    Genres: bookEdition.Work.BookGenres.map(bg => ({
+                        genreId: bg.genreId,
+                        genreName: bg.Genre.genreName
+                    }))
                 },
                 contributors: bookEdition.bookContributors.map(bc => ({
-                    personId: bc.personId,
+                    personId: bc.person.personId,
                     personName: bc.person.personName,
                     roles: bc.Role.roleName
                 }))
+            },
+            otherEditions: otherEditions.map(edition => ({
+                UUID: edition.UUID,
+                title: edition.title,
+                coverImage: edition.coverImage,
+                pageNumber: edition.pageNumber,
+                language: edition.Language.languageName,
+                publicationDate: edition.publicationDate,
+                publisherName: edition.Publisher.publisherName
+            })),
+            pagination: {
+                totalEditions: editionCount,
+                totalPages: Math.ceil(editionCount / parseInt(limit, 10)),
+                currentPage: parseInt(page, 10)
             }
         };
-        
-        // Include series information if the work is part of a series
-        if (bookEdition.Work.seriesId) {
-            response.bookEdition.Work.series = {
-                seriesId: bookEdition.Work.seriesId,
-                seriesName: bookEdition.Work.BookInSeries.seriesName,
-                seriesDescription: bookEdition.Work.BookInSeries.seriesDescription,
-                seriesOrder: bookEdition.Work.seriesOrder
-            };
-        }
         
         return res.status(200).json(response);
     } catch (err) {
@@ -1792,6 +1831,8 @@ exports.getBookEdition = async (req, res) => {
         });
     }
 };
+
+
 
 
 
