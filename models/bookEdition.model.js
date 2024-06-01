@@ -15,6 +15,11 @@ module.exports = (sequelize, DataTypes) => {
           if (value && !/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
             throw new Error('Invalid ISBN format.');
           }
+        },
+        canBeNullIfAudiobook(value) {
+          if (!value && this.editionType !== 'Audiobook') {
+            throw new Error('ISBN is required for non-audiobook editions.');
+          }
         }
       }
     },
@@ -83,6 +88,6 @@ module.exports = (sequelize, DataTypes) => {
       { unique: true, fields: ['ISBN'] },
     ]
   });
-  
+
   return BookEdition;
 };
