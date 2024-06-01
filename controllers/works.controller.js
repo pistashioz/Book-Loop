@@ -241,7 +241,6 @@ exports.findAll = async (req, res) => {
     }
 };
 
-
 /**
  * Create a new work along with its initial book edition.
  * 
@@ -341,7 +340,8 @@ exports.create = async (req, res) => {
         if (!publisher) {
             return res.status(400).json({
                 success: false,
-                message: 'Publisher does not exist.',
+                message: `The publisher you're trying to use does not exist:`,
+                publisherName: edition.publisherName,
                 links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
             });
         }
@@ -410,12 +410,12 @@ exports.create = async (req, res) => {
 
 
 /**
-* Add an author to a work.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Add an author to a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.addAuthor = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
@@ -426,58 +426,61 @@ exports.addAuthor = async (req, res) => {
         const work = await Work.findByPk(workId);
         if (!work) {
             await t.rollback();
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Work not found.',
+                links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+            });
         }
-        
-        // Validate and associate authors
+
+        // Collect non-existent authors
+        const nonExistentAuthors = [];
         for (const authorName of authors) {
             const existingAuthor = await Person.findOne({
                 where: { personName: authorName }
             });
-            
+
             if (!existingAuthor) {
-                await t.rollback();
-                return res.status(400).json({
-                    success: false,
-                    message: `Author "${authorName}" does not exist.`,
-                    links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
-                });
+                nonExistentAuthors.push({ personName: authorName });
+                continue;
             }
-            
+
             const authorRole = await PersonRole.findOne({
                 where: {
                     personId: existingAuthor.personId,
                     roleId: 1 // '1' is the roleId for 'author'
                 }
             });
-            
+
             if (!authorRole) {
-                await t.rollback();
-                return res.status(400).json({
-                    success: false,
-                    message: `Author "${authorName}" does not have the 'author' role.`,
-                    links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
-                });
+                nonExistentAuthors.push({ personName: authorName, message: 'does not have the "author" role.' });
+                continue;
             }
-            
+
             // Check if the author is already associated with the work
             const existingAssociation = await BookAuthor.findOne({
                 where: { workId: work.workId, personId: existingAuthor.personId }
             });
-            
+
             if (existingAssociation) {
-                await t.rollback();
-                return res.status(400).json({
-                    success: false,
-                    message: `Author "${authorName}" is already associated with this work.`
-                });
+                nonExistentAuthors.push({ personName: authorName, message: 'is already associated with this work.' });
+                continue;
             }
-            
+
             await BookAuthor.create({ workId: work.workId, personId: existingAuthor.personId }, { transaction: t });
+        }
+
+        if (nonExistentAuthors.length > 0) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: "The following author(s) could not be added:",
+                nonExistentAuthors,
+                links: [{ rel: 'create-author', href: '/persons', method: 'POST' }]
+            });
         }
         
         await t.commit();
-        
         res.status(201).json({ success: true, message: 'Authors added to work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -488,12 +491,12 @@ exports.addAuthor = async (req, res) => {
 
 
 /**
-* Remove an author from a work.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Remove an author from a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.removeAuthor = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
@@ -503,14 +506,22 @@ exports.removeAuthor = async (req, res) => {
         const work = await Work.findByPk(workId);
         if (!work) {
             await t.rollback();
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Work not found.',
+                links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+            });
         }
         
         // Check if the author association exists
         const authorAssociation = await BookAuthor.findOne({ where: { workId, personId: authorId } });
         if (!authorAssociation) {
             await t.rollback();
-            return res.status(404).json({ success: false, message: 'Author association not found for this work.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Author association not found for this work.',
+                links: [{ rel: 'add-author', href: `/works/${workId}/authors`, method: 'POST' }]
+            });
         }
         
         // Count current authors
@@ -539,13 +550,14 @@ exports.removeAuthor = async (req, res) => {
 };
 
 
+
 /**
-* Add a genre to a work.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Add a genre to a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.addGenre = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
@@ -555,9 +567,13 @@ exports.addGenre = async (req, res) => {
         // Check if work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Work not found.',
+                links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+            });
         }
-        
+
         let nonexistentGenres = [];
         let alreadyAssociatedGenres = [];
         
@@ -565,42 +581,41 @@ exports.addGenre = async (req, res) => {
         for (const genreName of genres) {
             const existingGenre = await Genre.findOne({ where: { genreName } });
             if (!existingGenre) {
-                nonexistentGenres.push(genreName);
+                nonexistentGenres.push({ genreName });
                 continue;
             }
             
             // Check if the genre is already associated with the work
             const existingAssociation = await BookGenre.findOne({ where: { workId, genreId: existingGenre.genreId } });
             if (existingAssociation) {
-                alreadyAssociatedGenres.push(genreName);
+                alreadyAssociatedGenres.push({ genreName });
                 continue;
             }
             
             await BookGenre.create({ workId: work.workId, genreId: existingGenre.genreId }, { transaction: t });
         }
-        
+
         if (nonexistentGenres.length > 0 || alreadyAssociatedGenres.length > 0) {
             let errorMessages = [];
-            
+
             if (nonexistentGenres.length > 0) {
-                errorMessages.push(`Genre(s) "${nonexistentGenres.join('", "')}" do not exist.`);
+                errorMessages.push(`The following genre(s) do not exist:`);
             }
-            
+
             if (alreadyAssociatedGenres.length > 0) {
-                errorMessages.push(`Genre(s) "${alreadyAssociatedGenres.join('", "')}" are already associated with this work.`);
+                errorMessages.push(`The following genre(s) are already associated with this work:`);
             }
-            
+
             return res.status(400).json({
                 success: false,
                 message: errorMessages.join(' '),
-                links: [
-                    { rel: 'create-genre', href: '/genres', method: 'POST' }
-                ]
+                nonexistentGenres,
+                alreadyAssociatedGenres,
+                links: [{ rel: 'create-genre', href: '/genres', method: 'POST' }]
             });
         }
         
         await t.commit();
-        
         res.status(201).json({ success: true, message: 'Genres added to work successfully.' });
     } catch (err) {
         await t.rollback();
@@ -609,14 +624,13 @@ exports.addGenre = async (req, res) => {
     }
 };
 
-
 /**
-* Remove a genre from a work.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Remove a genre from a work.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.removeGenre = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
@@ -626,14 +640,22 @@ exports.removeGenre = async (req, res) => {
         const work = await Work.findByPk(workId);
         if (!work) {
             await t.rollback();
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Work not found.',
+                links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+            });
         }
         
         // Check if the genre association exists
         const genreAssociation = await BookGenre.findOne({ where: { workId, genreId } });
         if (!genreAssociation) {
             await t.rollback();
-            return res.status(404).json({ success: false, message: 'Genre association not found for this work.' });
+            return res.status(404).json({
+                success: false,
+                message: 'Genre association not found for this work.',
+                links: [{ rel: 'add-genre', href: `/works/${workId}/genres`, method: 'POST' }]
+            });
         }
         
         // Count current genres
@@ -662,18 +684,18 @@ exports.removeGenre = async (req, res) => {
 };
 
 /**
-* Retrieve a specific work by ID with all associated information.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and data
-*/
+ * Retrieve a specific work by ID with all associated information.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.findWork = async (req, res) => {
     try {
         const { workId } = req.params;
         const { page = 1, limit = 5 } = req.query;
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-        
+
         // Fetch the work with primary edition, authors, genres, series info, and average rating
         const work = await Work.findByPk(workId, {
             include: [
@@ -715,17 +737,21 @@ exports.findWork = async (req, res) => {
                 }
             ]
         });
-        
+
         if (!work) {
-            return res.status(404).json({ success: false, message: `No work found with id ${workId}` });
+            return res.status(404).json({
+                success: false,
+                message: `No work found with id ${workId}`,
+                links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
+            });
         }
-        
+
         // Fetch the count of editions
         const editionCount = await BookEdition.count({ where: { workId } });
-        
+
         // Fetch other editions with pagination
         const otherEditions = await BookEdition.findAll({
-            where: { workId, ISBN: { [Op.ne]: work.primaryEditionISBN } },
+            where: { workId, UUID: { [Op.ne]: work.primaryEditionUUID } },
             attributes: ['title', 'coverImage', 'pageNumber'],
             include: [
                 {
@@ -739,7 +765,7 @@ exports.findWork = async (req, res) => {
             offset: parseInt(offset, 10),
             raw: false,
         });
-        
+
         // Prepare the response data
         const responseData = {
             workId: work.workId,
@@ -747,7 +773,7 @@ exports.findWork = async (req, res) => {
             totalReviews: work.totalReviews || 0,
             seriesId: work.seriesId,
             seriesOrder: work.seriesOrder,
-            seriesName: work.BookInSeries.seriesName || 'Not part of a series',
+            seriesName: work.BookInSeries ? work.BookInSeries.seriesName : 'Not part of a series',
             primaryEdition: work.PrimaryEdition ? {
                 title: work.PrimaryEdition.title,
                 publicationDate: work.PrimaryEdition.publicationDate,
@@ -756,11 +782,11 @@ exports.findWork = async (req, res) => {
                 language: work.PrimaryEdition.Language.languageName
             } : null,
             authors: work.BookAuthors.map(author => ({
-                personId: author.personId,
+                personId: author.Person.personId,
                 personName: author.Person.personName
             })),
             genres: work.BookGenres.map(genre => ({
-                genreId: genre.genreId,
+                genreId: genre.Genre.genreId,
                 genreName: genre.Genre.genreName
             })),
             editionCount,
@@ -771,7 +797,7 @@ exports.findWork = async (req, res) => {
                 language: edition.Language.languageName
             }))
         };
-        
+
         return res.json({
             success: true,
             data: responseData,
