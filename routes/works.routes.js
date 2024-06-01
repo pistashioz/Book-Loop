@@ -48,7 +48,7 @@ router.route('/:workId/reviews')
 
 router.route('/:workId/reviews/:literaryReviewId')
     .patch(verifyToken, workController.updateReview)
-    // .get(workController.getReview) // i think this is not necessary for now as the info we would get it's the same we would get from .getReviews - if more features would be added in the future then it would be necessary to add this route
+    .get(workController.getReview) // i think this is not necessary for now as the info we would get it's the same we would get from .getReviews - if more features would be added in the future then it would be necessary to add this route
     .delete(verifyToken, workController.deleteReview);
 
 router.route('/:workId/reviews/:literaryReviewId/likes')

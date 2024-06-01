@@ -2315,7 +2315,7 @@ exports.updateReview = async (req, res) => {
 };
 
 
-/* // Get a specific review by work ID and review ID
+ // Get a specific review by work ID and review ID
 exports.getReview = async (req, res) => {
     try {
         const review = await LiteraryReview.findOne({
@@ -2334,7 +2334,7 @@ exports.getReview = async (req, res) => {
         console.error("Error fetching review:", err);
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the review" });
     }
-}; */
+}; 
 
 /**
 * Delete a literary review for a specific work and user.
