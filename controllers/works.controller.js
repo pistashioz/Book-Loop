@@ -1652,7 +1652,7 @@ exports.getBookEdition = async (req, res) => {
         
         const bookEdition = await BookEdition.findOne({
             where: { workId, UUID: editionUUID },
-            attributes: ['UUID', 'ISBN', 'title', 'publicationDate', 'synopsis', 'editionType', 'languageId', 'pageNumber', 'coverImage'],
+            // attributes: ['UUID', 'ISBN', 'title', 'publicationDate', 'synopsis', 'editionType', 'languageId', 'pageNumber', 'coverImage'],
             include: [
                 {
                     model: Publisher,
@@ -1681,8 +1681,23 @@ exports.getBookEdition = async (req, res) => {
                         {
                             model: BookEdition,
                             as: 'PrimaryEdition',
-                            attributes: ['publicationDate'],
+                            attributes: ['publicationDate', 'pageNumber', 'editionType'],
                             where: { UUID: Sequelize.col('Work.primaryEditionUUID') }
+                        },
+                        {
+                            model: BookInSeries,
+                            as: 'BookInSeries',
+                            attributes: ['seriesId','seriesName']
+                        },
+                        {
+                            model: BookGenre,
+                            as: 'BookGenres',
+                            attributes: ['genreId'],
+                            include: [{
+                                model: Genre,
+                                as: 'Genre',
+                                attributes: ['genreName']
+                            }]
                         }
                     ]
                 },
@@ -1698,6 +1713,10 @@ exports.getBookEdition = async (req, res) => {
                             attributes: ['roleName'],
                         }
                     ]
+                },
+                {
+                    model: Language,
+                    attributes: ['languageName']
                 }
             ]
         });
@@ -1708,10 +1727,8 @@ exports.getBookEdition = async (req, res) => {
                 message: "Book edition not found" 
             });
         }
-        console.log(bookEdition.Work.BookAuthors[0].dataValues.personId)
-        console.log(bookEdition.Work.BookAuthors[0].dataValues.Person.dataValues.personName)
 
-        console.log(bookEdition.bookContributors[0].Role)
+        console.log(bookEdition.Work.BookGenres[0].Genre.genreName);
         const response = {
             success: true,
             bookEdition: {
@@ -1721,7 +1738,7 @@ exports.getBookEdition = async (req, res) => {
                 publicationDate: bookEdition.publicationDate,
                 synopsis: bookEdition.synopsis,
                 editionType: bookEdition.editionType,
-                language: bookEdition.languageId,
+                language: bookEdition.Language.languageName,
                 pageNumber: bookEdition.pageNumber,
                 coverImage: bookEdition.coverImage,
                 publisherId: bookEdition.Publisher.publisherId,
@@ -1730,9 +1747,23 @@ exports.getBookEdition = async (req, res) => {
                     workId: bookEdition.Work.workId,
                     firstPublishedDate: bookEdition.Work.PrimaryEdition.publicationDate,
                     authors: bookEdition.Work.BookAuthors.map(ba => ({
-                        personId: ba.dataValues.personId,
-                        personName: ba.dataValues.Person.dataValues.personName
-                    }))
+                        personId: ba.dataValues.Person.personId,
+                        personName: ba.dataValues.Person.personName
+                    })),
+                    pageNumber: bookEdition.Work.PrimaryEdition.pageNumber,
+                    editionType: bookEdition.Work.PrimaryEdition.editionType,
+                    Series: bookEdition.Work.BookInSeries ? {
+                        seriesId: bookEdition.Work.BookInSeries.seriesId,
+                        seriesName: bookEdition.Work.BookInSeries.seriesName,
+                        /* seriesDescription: bookEdition.Work.BookInSeries.seriesDescription,
+                        seriesOrder: bookEdition.Work.seriesOrder */
+                    } : null,
+                    Genres: bookEdition.Work.BookGenres ? {
+                        genres: bookEdition.Work.BookGenres.map(bg => ({
+                            genreId: bg.genreId,
+                            genreName: bg.Genre.genreName
+                        }))
+                    } : null,
                 },
                 contributors: bookEdition.bookContributors.map(bc => ({
                     personId: bc.personId,
@@ -1761,6 +1792,7 @@ exports.getBookEdition = async (req, res) => {
         });
     }
 };
+
 
 
 
