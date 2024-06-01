@@ -9,6 +9,7 @@ const {
     LikeReview,
     LikeComment,
     BookInSeries,
+    User,
     Publisher,
     BookGenre,
     Language,
@@ -1383,18 +1384,18 @@ exports.addEdition = async (req, res) => {
 
 
 /**
- * Add contributors to a book edition.
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<Object>} JSON response with success status and message
- */
+* Add contributors to a book edition.
+* 
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<Object>} JSON response with success status and message
+*/
 exports.addContributor = async (req, res) => {
     const t = await db.sequelize.transaction();
     try {
         const { workId, editionUUID } = req.params;
         const { contributors } = req.body;
-
+        
         console.log(`workId: ${workId}, editionUUID: ${editionUUID}`);
         
         // Check if book edition exists
@@ -1407,7 +1408,7 @@ exports.addContributor = async (req, res) => {
                 links: [{ rel: 'create-edition', href: `/works/${workId}/editions`, method: 'POST' }]
             });
         }
-
+        
         // Fetch work to check primary edition
         const work = await Work.findOne({
             where: { workId },
@@ -1416,7 +1417,7 @@ exports.addContributor = async (req, res) => {
                 as: 'PrimaryEdition'
             }]
         });
-
+        
         if (!work || !work.PrimaryEdition) {
             await t.rollback();
             return res.status(404).json({ 
@@ -1424,9 +1425,9 @@ exports.addContributor = async (req, res) => {
                 message: 'Primary edition not found for the work.',
             });
         }
-
+        
         const primaryEdition = work.PrimaryEdition;
-
+        
         // Check if the edition is the primary edition
         if (primaryEdition.UUID === edition.UUID) {
             await t.rollback();
@@ -1435,7 +1436,7 @@ exports.addContributor = async (req, res) => {
                 message: 'Cannot add contributors to the primary edition of a work.',
             });
         }
-
+        
         // Validate specific roles for edition type and language
         const needsTranslator = primaryEdition.languageId !== edition.languageId;
         const needsNarrator = edition.editionType === 'Audiobook';
@@ -1509,7 +1510,7 @@ exports.addContributor = async (req, res) => {
                 links: [{ rel: 'assign-role', href: '/person-roles', method: 'POST' }]
             });
         }
-
+        
         if (invalidRoles.length > 0) {
             await t.rollback();
             return res.status(400).json({
@@ -1518,7 +1519,7 @@ exports.addContributor = async (req, res) => {
                 invalidRoles
             });
         }
-
+        
         if (needsTranslator && !validContributors.some(c => c.role.roleName === 'translator')) {
             return res.status(400).json({
                 success: false,
@@ -1564,7 +1565,7 @@ exports.removeContributor = async (req, res) => {
     try {
         const { workId, editionUUID } = req.params;
         const { personId, roleName } = req.body;
-
+        
         if (roleName.toLowerCase() === 'author') {
             return res.status(400).json({
                 success: false,
@@ -1572,7 +1573,7 @@ exports.removeContributor = async (req, res) => {
                 links: [{ rel: 'remove-author', href: `/works/${workId}/authors/${personId}`, method: 'DELETE' }]
             });
         }
-
+        
         // Check if book edition exists
         const edition = await BookEdition.findOne({ where: { UUID: editionUUID, workId } });
         if (!edition) {
@@ -1583,7 +1584,7 @@ exports.removeContributor = async (req, res) => {
                 links: [{ rel: 'create-edition', href: `/works/${workId}/editions`, method: 'POST' }]
             });
         }
-
+        
         // Check if the contributor exists
         const role = await db.Role.findOne({ where: { roleName } });
         if (!role) {
@@ -1594,7 +1595,7 @@ exports.removeContributor = async (req, res) => {
                 links: [{ rel: 'create-role', href: '/roles', method: 'POST' }]
             });
         }
-
+        
         const contributor = await BookContributor.findOne({ where: { editionUUID: edition.UUID, personId, roleId: role.roleId } });
         if (!contributor) {
             await t.rollback();
@@ -1604,7 +1605,7 @@ exports.removeContributor = async (req, res) => {
                 links: [{ rel: 'add-contributor', href: `/works/${workId}/editions/${editionUUID}/contributors`, method: 'POST' }]
             });
         }
-
+        
         // Count current contributors
         const currentContributorsCount = await BookContributor.count({ where: { editionUUID: edition.UUID } });
         
@@ -1643,7 +1644,7 @@ exports.getBookEdition = async (req, res) => {
         const { workId, editionUUID } = req.params;
         const { page = 1, limit = 5 } = req.query;
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-
+        
         if (!workId || !editionUUID) {
             return res.status(400).json({ 
                 success: false, 
@@ -1722,7 +1723,7 @@ exports.getBookEdition = async (req, res) => {
                 message: "Book edition not found" 
             });
         }
-
+        
         const editionCount = await BookEdition.count({ where: { workId } });
         
         // Fetch other editions with pagination
@@ -1744,7 +1745,7 @@ exports.getBookEdition = async (req, res) => {
             offset: offset,
             raw: false,
         });
-
+        
         // Fetch literary reviews and calculate rating distribution
         const ratingData = await LiteraryReview.findAll({
             where: { workId },
@@ -1755,14 +1756,14 @@ exports.getBookEdition = async (req, res) => {
             group: ['rating'],
             raw: true
         });
-
+        
         const totalRatings = ratingData.reduce((sum, item) => sum + parseInt(item.count, 10), 0);
         const ratingDistribution = ratingData.map(item => ({
             stars: parseInt(item.rating, 10),
             count: parseInt(item.count, 10),
             percentage: ((item.count / totalRatings) * 100).toFixed(2) + '%'
         }));
-
+        
         const response = {
             success: true,
             bookEdition: {
@@ -1832,44 +1833,61 @@ exports.getBookEdition = async (req, res) => {
     }
 };
 
-
-
-
-
-
-
 /**
-* Update a specific book edition by work ID and book edition ID (ISBN).
+* Update a specific book edition by work ID and book edition ID (UUID).
 * 
 * @param {Object} req - Express request object
 * @param {Object} res - Express response object
 * @returns {Promise<Object>} JSON response with success status and message
 */
 exports.updateBookEdition = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
-        const { workId, bookEditionId } = req.params;
+        const { workId, editionUUID } = req.params;
         const updatedData = req.body;
+        
+        // Create a mapping of field names to human-readable names
+        const fieldNames = {
+            title: 'Title',
+            synopsis: 'Synopsis',
+            editionType: 'Edition type',
+            pageNumber: 'Page number',
+            coverImage: 'Cover image',
+            publisherName: 'Publisher name',
+            languageId: 'Language'
+        };
         
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            await t.rollback();
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Work not found.',
+                nonExistentInstance: { workId }
+            });
         }
         
         // Check if the book edition exists
-        const bookEdition = await BookEdition.findOne({ where: { workId: { [Op.eq]: workId }, ISBN: bookEditionId } });
+        const bookEdition = await BookEdition.findOne({ where: { workId, UUID: editionUUID } });
         if (!bookEdition) {
-            return res.status(404).json({ success: false, message: 'Book Edition not found.' });
+            await t.rollback();
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Book Edition not found.',
+                nonExistentInstance: { editionUUID }
+            });
         }
         
         // Validate ISBN if it is being updated
         if (updatedData.ISBN && updatedData.ISBN !== bookEdition.ISBN) {
             const existingEdition = await BookEdition.findOne({ where: { ISBN: updatedData.ISBN } });
             if (existingEdition) {
+                await t.rollback();
                 return res.status(400).json({
                     success: false,
                     message: 'ISBN already in use.',
-                    links: [{ rel: 'existing-edition', href: `/works/${existingEdition.workId}/editions/${existingEdition.ISBN}`, method: 'GET' }]
+                    links: [{ rel: 'existing-edition', href: `/works/${existingEdition.workId}/editions/${existingEdition.UUID}`, method: 'GET' }]
                 });
             }
         }
@@ -1878,46 +1896,79 @@ exports.updateBookEdition = async (req, res) => {
         if (updatedData.workId && updatedData.workId !== bookEdition.workId) {
             const newWork = await Work.findByPk(updatedData.workId);
             if (!newWork) {
+                await t.rollback();
                 return res.status(400).json({
                     success: false,
                     message: 'New work ID does not exist.',
+                    nonExistentInstance: { workId: updatedData.workId },
                     links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
                 });
             }
         }
         
-        // Validate publisherId if it is being updated
-        if (updatedData.publisherId && updatedData.publisherId !== bookEdition.publisherId) {
-            const newPublisher = await Publisher.findByPk(updatedData.publisherId);
+        // Validate publisherName if it is being updated
+        if (updatedData.publisherName) {
+            const newPublisher = await Publisher.findOne({ where: { publisherName: updatedData.publisherName } });
             if (!newPublisher) {
+                await t.rollback();
                 return res.status(400).json({
                     success: false,
-                    message: 'New publisher ID does not exist.',
+                    message: 'Publisher does not exist.',
+                    nonExistentInstance: { publisherName: updatedData.publisherName },
                     links: [{ rel: 'create-publisher', href: '/publishers', method: 'POST' }]
+                });
+            }
+            updatedData.publisherId = newPublisher.publisherId;
+        }
+        
+        // Validate languageId if it is being updated
+        if (updatedData.languageId) {
+            const newLanguage = await Language.findByPk(updatedData.languageId);
+            if (!newLanguage) {
+                await t.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: 'Language does not exist.',
+                    nonExistentInstance: { languageId: updatedData.languageId },
+                    links: [{ rel: 'create-language', href: '/languages', method: 'POST' }]
                 });
             }
         }
         
         // Ensure no field is updated to null/empty/undefined if the field is present in the request body
-        const requiredFields = ['title', 'synopsis', 'editionType', 'language', 'pageNumber', 'coverImage'];
+        const requiredFields = ['title', 'synopsis', 'editionType', 'pageNumber', 'coverImage'];
         for (const field of requiredFields) {
             if (updatedData.hasOwnProperty(field) && (updatedData[field] === null || updatedData[field] === undefined || updatedData[field] === '')) {
-                return res.status(400).json({ success: false, message: `${field} cannot be null or empty.` });
+                const readableField = fieldNames[field] || field;
+                return res.status(400).json({ success: false, message: `${readableField} cannot be null or empty.` });
             }
         }
         
+        // Ensure ISBN is not set to null unless it's an Audiobook
+        const newEditionType = updatedData.editionType || bookEdition.editionType;
+        if (updatedData.hasOwnProperty('ISBN') && updatedData.ISBN === null && newEditionType !== 'Audiobook') {
+            return res.status(400).json({ 
+                success: false, 
+                message: `ISBN cannot be null for ${newEditionType} editions.`
+            });
+        }
+        
         // Update the book edition
-        await BookEdition.update(updatedData, { where: { workId: { [Op.eq]: workId }, ISBN: bookEditionId } });
+        await BookEdition.update(updatedData, { where: { workId, UUID: editionUUID }, transaction: t });
         
-        const updatedBookEdition = await BookEdition.findOne({ where: { workId: { [Op.eq]: workId }, ISBN: updatedData.ISBN || bookEditionId } });
+        await t.commit();
         
+        const updatedBookEdition = await BookEdition.findOne({ where: { workId, UUID: editionUUID } });
+        
+   
         res.status(200).json({
             success: true,
             message: 'Book edition updated successfully.',
-            previousISBN: bookEdition.ISBN !== updatedData.ISBN ? bookEdition.ISBN : null,
+            previousData: bookEdition,
             updatedBookEdition
         });
     } catch (err) {
+        await t.rollback();
         console.error('Error updating book edition:', err);
         if (err instanceof ValidationError) {
             return res.status(400).json({ success: false, message: 'Invalid or incomplete data provided' });
@@ -1926,47 +1977,80 @@ exports.updateBookEdition = async (req, res) => {
     }
 };
 
+
 /**
-* Remove a specific book edition by work ID and book edition ID (ISBN).
+* Remove a specific book edition by work ID and book edition ID (UUID).
 * 
 * @param {Object} req - Express request object
 * @param {Object} res - Express response object
 * @returns {Promise<Object>} JSON response with success status and message
 */
 exports.removeBookEdition = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
-        const { workId, bookEditionId } = req.params;
+        const { workId, editionUUID } = req.params;
         
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            await t.rollback();
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Work not found.',
+                nonExistentInstance: { workId }
+            });
         }
         
         // Check if the book edition exists
-        const bookEdition = await BookEdition.findOne({ where: { workId: { [Op.eq]: workId }, ISBN: bookEditionId } });
+        const bookEdition = await BookEdition.findOne({ where: { workId, UUID: editionUUID } });
         if (!bookEdition) {
-            return res.status(404).json({ success: false, message: 'Book Edition not found.' });
+            await t.rollback();
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Book Edition not found.',
+                nonExistentInstance: { editionUUID }
+            });
         }
         
         // Delete the book edition
-        await bookEdition.destroy();
+        await bookEdition.destroy({ transaction: t });
+        await t.commit();
+        
         res.status(204).json({ success: true, message: 'Book Edition deleted successfully.' });
     } catch (err) {
+        await t.rollback();
         console.error('Error deleting book edition:', err);
         return res.status(500).json({ success: false, message: err.message || 'Some error occurred while deleting the book edition.' });
     }
 };
 
 
-// Get reviews for a specific work by ID
-// Get reviews for a specific work by ID
+
+/**
+* Get literary reviews for a specific work with pagination.
+* 
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<Object>} JSON response with success status and data
+*/
 exports.getReviews = async (req, res) => {
     try {
         const { workId } = req.params;
-        const { page = 1, limit = 10 } = req.query;
-        const offset = (page - 1) * limit;
+        let { page = 1, limit = 10 } = req.query;
         
+        // Ensure limit and page are integers
+        page = parseInt(page, 10);
+        limit = parseInt(limit, 10);
+        
+        if (isNaN(page) || page <= 0) {
+            return res.status(400).json({ success: false, message: "Page must be a positive integer" });
+        }
+        if (isNaN(limit) || limit <= 0) {
+            return res.status(400).json({ success: false, message: "Limit must be a positive integer" });
+        }
+        
+        const offset = (page - 1) * limit;
+
         if (!workId) {
             return res.status(400).json({ success: false, message: "workId is required in the query parameters" });
         }
@@ -1976,13 +2060,14 @@ exports.getReviews = async (req, res) => {
             attributes: [
                 'literaryReviewId',
                 'literaryReview',
+                'literaryRating',
                 'creationDate',
                 'totalLikes',
-                [db.sequelize.literal('(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)'), 'commentCount']
+                'totalComments'
             ],
             include: [
                 {
-                    model: db.User,
+                    model: User,
                     attributes: [
                         'userId',
                         'username',
@@ -2002,7 +2087,7 @@ exports.getReviews = async (req, res) => {
         
         const formattedReviews = reviews.map(review => ({
             literaryReviewId: review.literaryReviewId,
-            reviewContent: review.literaryReview.substring(0, review.literaryReview.length / 3), // Preview content
+            reviewContent: review.literaryReview, // Full content
             createdAt: review.creationDate,
             user: {
                 userId: review.User.userId,
@@ -2012,7 +2097,8 @@ exports.getReviews = async (req, res) => {
                 followersCount: review.User.totalFollowers || 0
             },
             likeCount: review.totalLikes || 0,
-            commentCount: review.dataValues.commentCount || 0,
+            commentCount: review.totalComments || 0,
+            literaryRating: review.literaryRating,
             links: [
                 { rel: "self", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "GET" },
                 { rel: "delete", href: `/works/${review.workId}/reviews/${review.literaryReviewId}`, method: "DELETE" },
@@ -2028,7 +2114,7 @@ exports.getReviews = async (req, res) => {
             message: `Found ${reviews.length} reviews`,
             totalReviews,
             totalPages,
-            currentPage: parseInt(page, 10),
+            currentPage: page,
             reviews: formattedReviews,
             links: [{ rel: "add-literary-review", href: `/works/${workId}/reviews/`, method: "POST" }]
         });
@@ -2038,63 +2124,83 @@ exports.getReviews = async (req, res) => {
     }
 };
 
+
+
 /**
-* Add a review to a specific work by ID.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and message
-*/
+ * Add a review to a specific work by ID.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.addReview = async (req, res) => {
     try {
         const { workId } = req.params;
         const { literaryReview, literaryRating } = req.body;
         
         // Check if the work exists
-        const work = await Work.findByPk(workId, {
-            include: [{
-                model: db.BookInSeries,
-                as: 'BookInSeries',
-                attributes: ['seriesId', 'seriesName', 'seriesDescription']
-            }]
-        });
+        const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: `No work found with ID ${workId}` });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No work found with ID ${workId}` 
+            });
         }
         
         // Validate the required fields
         if (!req.userId) {
-            return res.status(400).json({ success: false, message: 'User ID is required' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'User ID is required' 
+            });
         }
         if (literaryRating === undefined || literaryRating === null) {
-            return res.status(400).json({ success: false, message: 'Literary rating is required' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Literary rating is required' 
+            });
+        }
+        if (!literaryReview || literaryReview.trim() === '') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Literary review content cannot be empty' 
+            });
         }
         
         // Create the new review
-        const newReview = await db.LiteraryReview.create({
+        const newReview = await LiteraryReview.create({
             workId,
             userId: req.userId,
             literaryReview,
             literaryRating,
             creationDate: new Date()
         });
+
+        // Fetch the user's total reviews and total followers to include in the response
+        const user = await User.findByPk(req.userId, {
+            attributes: ['userId', 'username', 'profileImage', 'totalReviews', 'totalFollowers']
+        });
         
         // Prepare response data
         const response = {
             success: true,
             message: 'Review created successfully',
-            data: newReview
+            review: {
+                literaryReviewId: newReview.literaryReviewId,
+                literaryReview: newReview.literaryReview,
+                literaryRating: newReview.literaryRating,
+                creationDate: newReview.creationDate,
+                totalLikes: newReview.totalLikes,
+                totalComments: newReview.totalComments,
+                user: {
+                    userId: user.userId,
+                    username: user.username,
+                    profileImageUrl: user.profileImage,
+                    reviewCount: user.totalReviews,
+                    followersCount: user.totalFollowers
+                }
+            }
         };
-        
-        // If the work is part of a series, add the series information
-        if (work.BookInSeries) {
-            response.series = {
-                seriesId: work.BookInSeries.seriesId,
-                seriesName: work.BookInSeries.seriesName,
-                seriesDescription: work.BookInSeries.seriesDescription,
-                seriesOrder: work.seriesOrder
-            };
-        }
         
         return res.status(201).json(response);
     } catch (err) {
@@ -2105,6 +2211,7 @@ exports.addReview = async (req, res) => {
         });
     }
 };
+
 
 /**
 * Update a review for a specific work by ID.
@@ -2117,55 +2224,98 @@ exports.updateReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const { literaryReview, literaryRating } = req.body;
-        
+
+        // Validate parameters
+        if (!workId || !literaryReviewId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "workId and literaryReviewId are required in the query parameters" 
+            });
+        }
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Work not found.',
+                workId
+            });
         }
-        
+
         // Check if the review exists
         const review = await LiteraryReview.findByPk(literaryReviewId);
         if (!review) {
-            return res.status(404).json({ success: false, message: `No review found with ID ${literaryReviewId}` });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No review found with ID ${literaryReviewId}`,
+                reviewId: literaryReviewId
+            });
         }
-        
+
         // Check if the review belongs to the user making the request
         if (review.userId !== req.userId) {
-            return res.status(403).json({ success: false, message: 'You are not authorized to update this review.' });
+            return res.status(403).json({ 
+                success: false, 
+                message: 'You are not authorized to update this review.',
+                reviewId: literaryReviewId,
+                userId: req.userId
+            });
         }
-        
+
         // Validate that literaryRating is provided and valid
         if (literaryRating === undefined || literaryRating === null) {
-            return res.status(400).json({ success: false, message: 'Literary rating is required.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Literary rating is required.' 
+            });
         }
-        
+
         // Prepare the update fields
         const reviewUpdates = {
             literaryReview,
             literaryRating,
             creationDate: new Date() // Update to current date/time
         };
-        
+
         // Update the review
         const [affectedRows] = await LiteraryReview.update(reviewUpdates, { where: { literaryReviewId } });
-        
+
         if (affectedRows === 0) {
-            return res.status(200).json({ success: true, message: `No updates were made on review with ID ${literaryReviewId}.` });
+            return res.status(200).json({ 
+                success: true, 
+                message: `No updates were made on review with ID ${literaryReviewId}.`,
+                reviewId: literaryReviewId
+            });
         }
-        
-        return res.json({ success: true, message: `Review with ID ${literaryReviewId} was updated successfully.` });
+
+        // Fetch the updated review for response
+        const updatedReview = await LiteraryReview.findByPk(literaryReviewId);
+
+        return res.status(200).json({ 
+            success: true, 
+            message: `Review with ID ${literaryReviewId} was updated successfully.`,
+            review: updatedReview
+        });
     } catch (err) {
         console.error("Error updating review:", err);
         if (err instanceof ValidationError) {
-            return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Validation error',
+                errors: err.errors.map(e => e.message)
+            });
         } else {
-            return res.status(500).json({ success: false, message: err.message || "Some error occurred while updating the review." });
+            return res.status(500).json({ 
+                success: false, 
+                message: err.message || "Some error occurred while updating the review." 
+            });
         }
     }
 };
 
-// Get a specific review by work ID and review ID
+
+/* // Get a specific review by work ID and review ID
 exports.getReview = async (req, res) => {
     try {
         const review = await LiteraryReview.findOne({
@@ -2184,30 +2334,56 @@ exports.getReview = async (req, res) => {
         console.error("Error fetching review:", err);
         return res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the review" });
     }
-};
+}; */
 
-//Deletes a literary review for a specific work and user.
+/**
+* Delete a literary review for a specific work and user.
+* 
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<Object>} JSON response with success status and message
+*/
 exports.deleteReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const userId = req.userId;
         
+        // Validate parameters
+        if (!workId || !literaryReviewId || !userId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "workId, literaryReviewId, and userId are required in the query parameters" 
+            });
+        }
+
         // Find the review to ensure it exists and belongs to the user
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId, userId } });
         
         if (!review) {
-            return res.status(404).json({ success: false, msg: `No review found with ID ${literaryReviewId} for the given work and user.` });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No review found with ID ${literaryReviewId} for the specified work and user.`,
+                reviewId: literaryReviewId
+            });
         }
         
         // Delete the review
         await LiteraryReview.destroy({ where: { literaryReviewId } });
         
-        return res.status(200).json({ success: true, msg: `Review with ID ${literaryReviewId} was successfully deleted!` });
+        return res.status(200).json({ 
+            success: true, 
+            message: `Review with ID ${literaryReviewId} was successfully deleted!`,
+            reviewId: literaryReviewId
+        });
     } catch (err) {
         console.error("Error deleting review:", err);
-        return res.status(500).json({ success: false, msg: err.message || `Error deleting review with ID ${req.params.literaryReviewId}.` });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || `Error deleting review with ID ${req.params.literaryReviewId}.` 
+        });
     }
 };
+
 
 /**
 * Like a review by review ID.
@@ -2220,33 +2396,62 @@ exports.likeReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const userId = req.userId;
-        
+
+        // Validate parameters
+        if (!workId || !literaryReviewId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "workId and literaryReviewId are required in the query parameters" 
+            });
+        }
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Work not found.',
+                workId
+            });
         }
-        
+
         // Find the review to ensure it exists
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId } });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Literary review not found.',
+                reviewId: literaryReviewId
+            });
         }
-        
+
         // Check if the user has already liked the review
         const existingLike = await LikeReview.findOne({ where: { literaryReviewId, userId } });
         if (existingLike) {
-            return res.status(400).json({ success: false, message: 'You have already liked this review.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'You have already liked this review.',
+                reviewId: literaryReviewId
+            });
         }
-        
+
         // Create a new like
         const newLike = await LikeReview.create({ literaryReviewId, userId });
-        return res.status(201).json({ success: true, message: 'Literary review liked successfully.', data: newLike });
+
+        return res.status(201).json({ 
+            success: true, 
+            message: 'Literary review liked successfully.',
+            data: newLike
+        });
     } catch (err) {
         console.error("Error liking review:", err);
-        return res.status(500).json({ success: false, message: 'Error liking literary review.' });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || 'Error liking literary review.' 
+        });
     }
 };
+
 
 /**
 * Remove like from a review by review ID.
@@ -2259,93 +2464,138 @@ exports.removeLikeReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const userId = req.userId;
-        
+
+        // Validate parameters
+        if (!workId || !literaryReviewId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "workId and literaryReviewId are required in the query parameters" 
+            });
+        }
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Work not found.',
+                workId
+            });
         }
-        
+
         // Find the like to ensure it exists
         const existingLike = await LikeReview.findOne({ where: { literaryReviewId, userId } });
         if (!existingLike) {
-            return res.status(404).json({ success: false, message: 'Like not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Like not found.',
+                reviewId: literaryReviewId
+            });
         }
-        
+
         // Delete the like
         await existingLike.destroy();
-        return res.status(200).json({ success: true, message: 'Literary review unliked successfully.' });
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Literary review unliked successfully.'
+        });
     } catch (err) {
         console.error("Error unliking review:", err);
-        return res.status(500).json({ success: false, message: 'Error unliking literary review.' });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || 'Error unliking literary review.' 
+        });
     }
 };
 
-// Get comments for a specific review by work ID and review ID
+
+/**
+* Get comments for a specific literary review with pagination.
+* 
+* @param {Object} req - Express request object
+* @param {Object} res - Express response object
+* @returns {Promise<Object>} JSON response with success status and message
+*/
 exports.getReviewsComments = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
-        const { page = 1, limit = 10 } = req.query;
+        let { page = 1, limit = 10 } = req.query;
+
+        // Ensure page and limit are integers
+        page = parseInt(page, 10);
+        limit = parseInt(limit, 10);
+        if (isNaN(page) || page < 1) page = 1;
+        if (isNaN(limit) || limit < 1) limit = 10;
+
         const offset = (page - 1) * limit;
-        
+
+        // Fetch comments with pagination
         const comments = await CommentReview.findAll({
             where: { literaryReviewId },
             attributes: [
-                'commentId', 
-                'literaryReviewId', 
-                'comment', 
+                'commentId',
+                'literaryReviewId',
+                'comment',
                 'creationDate',
-                [db.sequelize.literal('(SELECT COUNT(*) FROM likeComment WHERE likeComment.commentId = CommentReview.commentId)'), 'likeCount']
+                'totalLikes'
             ],
             include: [
                 {
                     model: db.User,
                     as: 'Commenter',
-                    attributes: ['userId', 'username']
+                    attributes: ['userId', 'username', 'profileImage']
                 }
             ],
             order: [['creationDate', 'DESC']],
             offset,
             limit,
         });
-        
+
         if (comments.length === 0) {
-            return res.status(404).json({ success: false, message: "No comments found for this review" });
+            return res.status(404).json({ 
+                success: false, 
+                message: "No comments found for this review" 
+            });
         }
-        
+
         const formattedComments = comments.map(comment => ({
             commentId: comment.commentId,
             literaryReviewId: comment.literaryReviewId,
             comment: comment.comment,
             createdAt: comment.creationDate,
-            likeCount: comment.dataValues.likeCount || 0,
-            User: {
+            likeCount: comment.totalLikes || 0,
+            user: {
                 userId: comment.Commenter.userId,
-                username: comment.Commenter.username
+                username: comment.Commenter.username,
+                profileImage: comment.Commenter.profileImage
             },
             links: [
                 { rel: "delete", href: `/works/${workId}/reviews/${literaryReviewId}/comments/${comment.commentId}`, method: "DELETE" },
                 { rel: "modify", href: `/works/${workId}/reviews/${literaryReviewId}/comments/${comment.commentId}`, method: "PATCH" }
             ]
         }));
-        
+
         const totalComments = await CommentReview.count({ where: { literaryReviewId } });
         const totalPages = Math.ceil(totalComments / limit);
-        
+
         res.status(200).json({
             success: true,
             message: `Found ${comments.length} comments`,
             totalComments,
             totalPages,
-            currentPage: parseInt(page, 10),
+            currentPage: page,
             comments: formattedComments,
             links: [{ rel: "add-comment-review", href: `/works/${workId}/reviews/${literaryReviewId}/comments`, method: "POST" }]
         });
     } catch (err) {
         console.error("Error fetching comments:", err);
-        res.status(500).json({ success: false, message: err.message || "Some error occurred while retrieving the comments." });
+        res.status(500).json({ 
+            success: false, 
+            message: err.message || "Some error occurred while retrieving the comments." 
+        });
     }
 };
+
 
 /**
 * Add a comment to a specific review by work ID and review ID.
@@ -2363,7 +2613,11 @@ exports.addCommentToReview = async (req, res) => {
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({
+                success: false,
+                message: `No work found with ID ${workId}`,
+                nonExistingInstance: 'Work'
+            });
         }
         
         // Check if the review exists
@@ -2374,12 +2628,19 @@ exports.addCommentToReview = async (req, res) => {
             }
         });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({
+                success: false,
+                message: `No literary review found with ID ${literaryReviewId} for the given work.`,
+                nonExistingInstance: 'Literary Review'
+            });
         }
         
         // Validate comment length
         if (!comment || comment.length > 255) {
-            return res.status(400).json({ success: false, message: 'Comment cannot be empty and must be less than 255 characters.' });
+            return res.status(400).json({
+                success: false,
+                message: 'Comment cannot be empty and must be less than 255 characters.'
+            });
         }
         
         // Create the new comment
@@ -2390,22 +2651,42 @@ exports.addCommentToReview = async (req, res) => {
             creationDate: new Date()
         });
         
+        // Fetch the user data to include in the response
+        const user = await User.findByPk(userId, {
+            attributes: ['userId', 'username', 'profileImage']
+        });
+
         return res.status(201).json({
             success: true,
             message: 'Comment created successfully.',
-            data: newComment
+            data: {
+                commentId: newComment.commentId,
+                literaryReviewId: newComment.literaryReviewId,
+                comment: newComment.comment,
+                createdAt: newComment.creationDate,
+                user: {
+                    userId: user.userId,
+                    username: user.username,
+                    profileImage: user.profileImage
+                },
+                likeCount: newComment.totalLikes
+            }
         });
     } catch (err) {
         console.error("Error adding comment:", err);
         if (err instanceof ValidationError) {
-            res.status(400).json({ success: false, msg: err.errors.map(e => e.message) });
+            return res.status(400).json({
+                success: false,
+                message: err.errors.map(e => e.message)
+            });
         }
         return res.status(500).json({
             success: false,
-            message: 'Error adding comment.'
+            message: 'Some error occurred while adding the comment.'
         });
     }
 };
+
 
 /**
 * Edit a comment for a specific review by comment ID.
@@ -2419,35 +2700,50 @@ exports.editCommentOfReview = async (req, res) => {
         const { workId, literaryReviewId, commentId } = req.params;
         const userId = req.userId;
         const { comment } = req.body;
-        
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No work found with ID ${workId}`, 
+                nonExistingInstance: 'Work'
+            });
         }
-        
+
         // Check if the review exists
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId } });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No literary review found with ID ${literaryReviewId} for the given work.`, 
+                nonExistingInstance: 'Literary Review'
+            });
         }
-        
+
         // Check if the comment exists and if the user is the owner of the comment
         const existingComment = await CommentReview.findOne({ where: { commentId, literaryReviewId, userId } });
         if (!existingComment) {
-            return res.status(404).json({ success: false, message: 'Comment not found or you do not have permission to edit this comment.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Comment not found or you do not have permission to edit this comment.`, 
+                nonExistingInstance: 'Comment'
+            });
         }
-        
+
         // Validate comment length
         if (!comment || comment.length > 255) {
-            return res.status(400).json({ success: false, message: 'Comment cannot be empty and must be less than 255 characters.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Comment cannot be empty and must be less than 255 characters.'
+            });
         }
-        
+
         // Update the comment
         existingComment.comment = comment;
         existingComment.creationDate = new Date(); // Update the creationDate to the current date and time
         await existingComment.save();
-        
+
         return res.status(200).json({
             success: true,
             message: `Comment with ID ${commentId} was updated successfully.`,
@@ -2456,12 +2752,19 @@ exports.editCommentOfReview = async (req, res) => {
     } catch (err) {
         console.error("Error updating comment:", err);
         if (err instanceof ValidationError) {
-            return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+            return res.status(400).json({ 
+                success: false, 
+                message: err.errors.map(e => e.message) 
+            });
         } else {
-            return res.status(500).json({ success: false, message: err.message || "Some error occurred while updating the comment." });
+            return res.status(500).json({ 
+                success: false, 
+                message: err.message || "Some error occurred while updating the comment."
+            });
         }
     }
 };
+
 
 /**
 * Remove a comment from a specific review by comment ID.
@@ -2474,34 +2777,53 @@ exports.removeCommentFromReview = async (req, res) => {
     try {
         const { workId, literaryReviewId, commentId } = req.params;
         const userId = req.userId;
-        
+
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No work found with ID ${workId}`, 
+                nonExistingInstance: 'Work'
+            });
         }
-        
+
         // Check if the review exists
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId } });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No literary review found with ID ${literaryReviewId} for the given work.`, 
+                nonExistingInstance: 'Literary Review'
+            });
         }
-        
+
         // Check if the comment exists and if the user is the owner of the comment
         const existingComment = await CommentReview.findOne({ where: { commentId, literaryReviewId, userId } });
         if (!existingComment) {
-            return res.status(404).json({ success: false, message: 'Comment not found or you do not have permission to delete this comment.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Comment not found or you do not have permission to delete this comment.`, 
+                nonExistingInstance: 'Comment'
+            });
         }
-        
+
         // Delete the comment
         await existingComment.destroy();
-        
-        return res.status(200).json({ success: true, message: `Comment with ID ${commentId} was successfully deleted.` });
+
+        return res.status(200).json({ 
+            success: true, 
+            message: `Comment with ID ${commentId} was successfully deleted.`
+        });
     } catch (err) {
         console.error("Error deleting comment:", err);
-        return res.status(500).json({ success: false, message: err.message || "Some error occurred while deleting the comment." });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || "Some error occurred while deleting the comment."
+        });
     }
 };
+
 
 /**
 * Like a comment by comment ID.
@@ -2518,35 +2840,58 @@ exports.likeComment = async (req, res) => {
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No work found with ID ${workId}`,
+                nonExistingInstance: 'Work'
+            });
         }
         
         // Check if the review exists
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId } });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No literary review found with ID ${literaryReviewId} for the given work.`,
+                nonExistingInstance: 'Literary Review'
+            });
         }
         
         // Check if the comment exists
         const comment = await CommentReview.findOne({ where: { commentId, literaryReviewId } });
         if (!comment) {
-            return res.status(404).json({ success: false, message: 'Comment not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No comment found with ID ${commentId} for the given review.`,
+                nonExistingInstance: 'Comment'
+            });
         }
         
         // Check if the user already liked the comment
         const existingLike = await LikeComment.findOne({ where: { commentId, userId } });
         if (existingLike) {
-            return res.status(400).json({ success: false, message: 'Comment already liked.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'You have already liked this comment.' 
+            });
         }
         
         // Create a new like
         const newLike = await LikeComment.create({ commentId, userId, likeDate: new Date() });
-        return res.status(201).json({ success: true, message: 'Comment liked successfully.', data: newLike });
+        return res.status(201).json({ 
+            success: true, 
+            message: 'Comment liked successfully.', 
+            data: newLike 
+        });
     } catch (err) {
         console.error("Error liking comment:", err);
-        return res.status(500).json({ success: false, message: 'Error liking comment.' });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || 'Error liking comment.' 
+        });
     }
 };
+
 
 /**
 * Remove like from a comment by comment ID.
@@ -2563,32 +2908,53 @@ exports.removeLikeComment = async (req, res) => {
         // Check if the work exists
         const work = await Work.findByPk(workId);
         if (!work) {
-            return res.status(404).json({ success: false, message: 'Work not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No work found with ID ${workId}`,
+                nonExistingInstance: 'Work'
+            });
         }
         
         // Check if the review exists
         const review = await LiteraryReview.findOne({ where: { literaryReviewId, workId } });
         if (!review) {
-            return res.status(404).json({ success: false, message: 'Literary review not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No literary review found with ID ${literaryReviewId} for the given work.`,
+                nonExistingInstance: 'Literary Review'
+            });
         }
         
         // Check if the comment exists
         const comment = await CommentReview.findOne({ where: { commentId, literaryReviewId } });
         if (!comment) {
-            return res.status(404).json({ success: false, message: 'Comment not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `No comment found with ID ${commentId} for the given review.`,
+                nonExistingInstance: 'Comment'
+            });
         }
         
         // Check if the like exists
         const existingLike = await LikeComment.findOne({ where: { commentId, userId } });
         if (!existingLike) {
-            return res.status(404).json({ success: false, message: 'Like not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Like not found.' 
+            });
         }
         
         // Delete the like
         await existingLike.destroy();
-        return res.status(200).json({ success: true, message: 'Comment unliked successfully.' });
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Comment unliked successfully.' 
+        });
     } catch (err) {
         console.error("Error unliking comment:", err);
-        return res.status(500).json({ success: false, message: 'Error unliking comment.' });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || 'Error unliking comment.' 
+        });
     }
 };
