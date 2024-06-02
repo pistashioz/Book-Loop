@@ -10,56 +10,90 @@ const { ValidationError, Op, fn, col } = require('sequelize');
  * @returns {Promise<Object>} JSON response with success status and data
  */
 exports.findAll = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
         const offset = (page - 1) * limit;
         const { role } = req.query;
 
         let where = {};
         if (role) {
-            const roleData = await Role.findOne({ where: { roleName: role } });
+            const roleData = await Role.findOne({ where: { roleName: role }, transaction: t });
             if (roleData) {
-                const personIds = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'] });
-                where = { personId: { [Op.in]: personIds.map(pr => pr.personId) } };
+                const personRoles = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'], transaction: t });
+                const personIds = personRoles.map(pr => pr.personId);
+                where = { personId: { [Op.in]: personIds } };
             } else {
-                where = { personId: -1 }; // No such role, return empty result
+                return res.status(404).json({ success: false, message: `Role '${role}' not found.` });
             }
         }
 
         const { count, rows: persons } = await Person.findAndCountAll({
             where,
             limit,
-            offset
+            offset,
+            transaction: t
         });
 
         const totalPages = Math.ceil(count / limit);
 
-        // Fetch detailed counts for each person
         const detailedPersons = await Promise.all(persons.map(async person => {
-            const worksCount = await BookAuthor.count({ where: { personId: person.personId } });
-            const audiobookCount = await BookContributor.count({
-                where: {
-                    personId: person.personId,
-                    editionISBN: { [Op.in]: (await BookEdition.findAll({ where: { editionType: 'Audiobook' }, attributes: ['ISBN'] })).map(be => be.ISBN) }
-                }
-            });
+            const worksCount = await BookAuthor.count({ where: { personId: person.personId }, transaction: t });
             const translationCount = await BookContributor.count({
                 where: {
                     personId: person.personId,
-                    editionISBN: { [Op.in]: (await BookEdition.findAll({ where: { editionType: { [Op.ne]: 'Audiobook' } }, attributes: ['ISBN'] })).map(be => be.ISBN) }
-                }
+                    roleId: (await Role.findOne({ where: { roleName: 'Translator' }, attributes: ['roleId'], transaction: t })).roleId
+                },
+                transaction: t
+            });
+            const audiobookCount = await BookContributor.count({
+                where: {
+                    personId: person.personId,
+                    roleId: (await Role.findOne({ where: { roleName: 'Narrator' }, attributes: ['roleId'], transaction: t })).roleId
+                },
+                transaction: t
             });
 
-            const roles = await PersonRole.findAll({ where: { personId: person.personId }, include: Role });
+            const bookAuthorWorks = await BookAuthor.findAll({ where: { personId: person.personId }, attributes: ['workId'], transaction: t });
+            const bookContributorEditions = await BookContributor.findAll({ where: { personId: person.personId }, attributes: ['editionUUID'], transaction: t });
+
+            const workIds = bookAuthorWorks.map(ba => ba.workId);
+            const editionUUIDs = bookContributorEditions.map(bc => bc.editionUUID);
+
+            let mostRecentPublication = null;
+            if (workIds.length > 0) {
+                const mostRecentWorkEdition = await BookEdition.findOne({
+                    where: { workId: { [Op.in]: workIds } },
+                    attributes: ['publicationDate'],
+                    order: [['publicationDate', 'DESC']],
+                    transaction: t
+                });
+                mostRecentPublication = mostRecentWorkEdition ? mostRecentWorkEdition.publicationDate : null;
+            }
+
+            if (editionUUIDs.length > 0) {
+                const mostRecentEdition = await BookEdition.findOne({
+                    where: { UUID: { [Op.in]: editionUUIDs } },
+                    attributes: ['publicationDate'],
+                    order: [['publicationDate', 'DESC']],
+                    transaction: t
+                });
+                if (!mostRecentPublication || (mostRecentEdition && new Date(mostRecentEdition.publicationDate) > new Date(mostRecentPublication))) {
+                    mostRecentPublication = mostRecentEdition ? mostRecentEdition.publicationDate : null;
+                }
+            }
+
             return {
                 ...person.toJSON(),
                 worksCount,
-                audiobookCount,
                 translationCount,
-                roles: roles.map(r => r.Role.roleName)
+                audiobookCount,
+                mostRecentPublication
             };
         }));
+
+        await t.commit();
 
         res.status(200).json({
             success: true,
@@ -69,10 +103,12 @@ exports.findAll = async (req, res) => {
             persons: detailedPersons
         });
     } catch (error) {
+        await t.rollback();
         console.error("Error fetching persons:", error);
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching persons" });
     }
 };
+
 
 /**
  * Create a new person.
@@ -359,107 +395,120 @@ exports.removeRole = async (req, res) => {
  * @returns {Promise<Object>} JSON response with success status and data
  */
 exports.findPerson = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
         const { personId } = req.params;
+        const { tab } = req.query;
 
         // Check if the person exists
-        const person = await Person.findByPk(personId, {
-            include: [
-                {
-                    model: BookAuthor,
-                    include: [
-                        {
-                            model: Work,
-                            include: [
-                                {
-                                    model: LiteraryReview,
-                                    attributes: []
-                                },
-                                {
-                                    model: BookInSeries,
-                                    as: 'BookInSeries',
-                                    attributes: ['seriesName']
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    model: BookContributor,
-                    include: [
-                        {
-                            model: BookEdition
-                        }
-                    ]
-                }
-            ]
-        });
-
+        const person = await Person.findByPk(personId, { transaction: t });
         if (!person) {
+            await t.rollback();
             return res.status(404).json({
                 success: false,
-                msg: `No person found with ID ${personId}`
+                message: `No person found with ID ${personId}`,
             });
         }
 
-        // Transform works to include additional information
-        const works = await Promise.all(person.bookAuthors.map(async (bookAuthor) => {
-            const work = bookAuthor.Work;
-            const literaryReviewsCount = await LiteraryReview.count({ where: { workId: work.workId } });
-            const averageRating = await LiteraryReview.findOne({
-                where: { workId: work.workId },
-                attributes: [[db.sequelize.fn('AVG', db.sequelize.col('literaryRating')), 'averageRating']],
-                raw: true
-            });
-            const coverEdition = await BookEdition.findOne({
-                where: {
-                    title: work.originalTitle,
-                    publicationDate: work.firstPublishedDate
-                },
-                attributes: ['coverImage']
-            });
-            const editionsCount = await BookEdition.count({ where: { workId: work.workId } });
+        const getPersonWorks = async () => {
+            const bookAuthors = await BookAuthor.findAll({ where: { personId: person.personId }, include: [{ model: Work, include: [{ model: BookInSeries, as: 'BookInSeries' }] }], transaction: t });
 
-            return {
-                workId: work.workId,
-                originalTitle: work.originalTitle,
-                firstPublishedDate: work.firstPublishedDate,
-                seriesId: work.seriesId,
-                seriesName: work.BookInSeries ? work.BookInSeries.seriesName : null,
-                seriesOrder: work.seriesOrder,
-                reviewsCount: literaryReviewsCount,
-                averageRating: averageRating ? averageRating.averageRating : null,
-                coverImage: coverEdition ? coverEdition.coverImage : null,
-                editionsCount
-            };
-        }));
+            return Promise.all(bookAuthors.map(async (bookAuthor) => {
+                const work = bookAuthor.Work;
+                const primaryEdition = await BookEdition.findOne({ where: { UUID: work.primaryEditionUUID }, transaction: t });
+                const editionsCount = await BookEdition.count({ where: { workId: work.workId }, transaction: t });
 
-        // Transform editions to include additional information
-        const editions = person.bookContributors.map((bookContributor) => {
-            const edition = bookContributor.BookEdition;
-            return {
-                ISBN: edition.ISBN,
-                title: edition.title,
-                editionType: edition.editionType,
-                language: edition.language,
-                pageNumber: edition.pageNumber,
-                publicationDate: edition.publicationDate,
-                coverImage: edition.coverImage
-            };
-        });
+                return {
+                    title: primaryEdition.title,
+                    coverImage: primaryEdition.coverImage,
+                    publicationDate: primaryEdition.publicationDate,
+                    pageNumber: primaryEdition.pageNumber,
+                    averageLiteraryRating: work.averageLiteraryRating,
+                    totalReviews: work.totalReviews,
+                    editionsCount,
+                    series: work.BookInSeries ? {
+                        seriesId: work.BookInSeries.seriesId,
+                        seriesName: work.BookInSeries.seriesName,
+                        seriesDescription: work.BookInSeries.seriesDescription,
+                        seriesOrder: work.seriesOrder,
+                    } : null
+                };
+            }));
+        };
 
-        const roles = await PersonRole.findAll({ where: { personId: person.personId }, include: Role });
+        const getPersonTranslations = async () => {
+            const bookContributors = await BookContributor.findAll({ where: { personId: person.personId, roleId: 2 }, include: [{ model: BookEdition }, { model: Role, attributes: ['roleName'] }], transaction: t });
+            return Promise.all(bookContributors.map(async (bookContributor) => {
+                const edition = bookContributor.BookEdition;
+                const work = await Work.findByPk(edition.workId, { include: [{ model: BookInSeries, as: 'BookInSeries' }, { model: BookAuthor, as:'BookAuthors', include: [{ model: Person, as:'Person' }] }], transaction: t });
+                const editionsCount = await BookEdition.count({ where: { workId: edition.workId }, transaction: t });
 
+                return {
+                    title: edition.title,
+                    coverImage: edition.coverImage,
+                    publicationDate: edition.publicationDate,
+                    pageNumber: edition.pageNumber,
+                    averageLiteraryRating: work.averageLiteraryRating,
+                    totalReviews: work.totalReviews,
+                    editionsCount,
+                    author: work.BookAuthors.map(author => ({ personId: author.Person.personId, personName: author.Person.personName })),
+                    series: work.BookInSeries ? {
+                        seriesId: work.BookInSeries.seriesId,
+                        seriesName: work.BookInSeries.seriesName,
+                        seriesDescription: work.BookInSeries.seriesDescription,
+                        seriesOrder: work.seriesOrder,
+                    } : null
+                };
+            }));
+        };
+
+        const getPersonNarrations = async () => {
+            const bookContributors = await BookContributor.findAll({ where: { personId: person.personId, roleId: 3 }, include: [{ model: BookEdition }, { model: Role, attributes: ['roleName'] }], transaction: t });
+            return Promise.all(bookContributors.map(async (bookContributor) => {
+                const edition = bookContributor.BookEdition;
+                const work = await Work.findByPk(edition.workId, { include: [{ model: BookInSeries, as: 'BookInSeries' }, { model: BookAuthor, as:'BookAuthors', include: [{ model: Person, as:'Person' }] }], transaction: t });
+                const editionsCount = await BookEdition.count({ where: { workId: edition.workId }, transaction: t });
+
+                return {
+                    title: edition.title,
+                    coverImage: edition.coverImage,
+                    publicationDate: edition.publicationDate,
+                    pageNumber: edition.pageNumber,
+                    averageLiteraryRating: work.averageLiteraryRating,
+                    totalReviews: work.totalReviews,
+                    editionsCount,
+                    author: work.BookAuthors.map(author => ({ personId: author.Person.personId, personName: author.Person.personName })),
+                    series: work.BookInSeries ? {
+                        seriesId: work.BookInSeries.seriesId,
+                        seriesName: work.BookInSeries.seriesName,
+                        seriesDescription: work.BookInSeries.seriesDescription,
+                        seriesOrder: work.seriesOrder,
+                    } : null
+                };
+            }));
+        };
+
+        let result;
+        switch (tab) {
+            case 'translator':
+                result = await getPersonTranslations();
+                break;
+            case 'narrator':
+                result = await getPersonNarrations();
+                break;
+            case 'author':
+            default:
+                result = await getPersonWorks();
+                break;
+        }
+
+        await t.commit();
         res.status(200).json({
             success: true,
             person: {
                 personId: person.personId,
                 personName: person.personName,
-                roles: roles.map(r => r.Role.roleName),
-                worksCount: works.length,
-                editionsCount: editions.length,
-                works,
-                editions
+                [tab || 'author']: result,
             },
             links: [
                 { rel: "self", href: `/persons/${person.personId}`, method: "GET" },
@@ -468,10 +517,12 @@ exports.findPerson = async (req, res) => {
             ]
         });
     } catch (error) {
+        await t.rollback();
         console.error("Error fetching person:", error);
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the person" });
     }
 };
+
 
 /**
  * Update a person's name by ID.
