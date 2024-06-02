@@ -529,10 +529,6 @@ exports.refreshTokens = async (req, res) => {
     }
 };
 
-
-
-
-
 // Log out action for user
 exports.logout = async (req, res) => {
     const sessionId = req.sessionId; // The current session ID obtained from the authenticated user's request
@@ -755,8 +751,7 @@ exports.validateSession = (req, res) => {
     });
 };
 
-
-       
+   
 // Get user settings accordingly to query params
 exports.getUserSettings = async (req, res) => {
     const userId = req.userId; // gotten from verifyToken middleware
@@ -792,6 +787,9 @@ exports.getUserSettings = async (req, res) => {
 
 async function fetchProfileSettings(userId) {
     const userProfile = await db.User.findByPk(userId, {
+        attributes: ['username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
+            'street','streetNumber', 'postalCode',
+         ],
         include: [
             {
                 model: db.PostalCode,
@@ -803,7 +801,7 @@ async function fetchProfileSettings(userId) {
     if (!userProfile) {
         throw new Error('User not found');
     }
-    
+    console.log(userProfile);
     // Construct a response object
     return {
         username: userProfile.username,
@@ -814,9 +812,9 @@ async function fetchProfileSettings(userId) {
         address: {
             streetName: userProfile.street,
             streetNumber: userProfile.streetNumber,
-            postalCode: userProfile.postalCodeDetails.postalCode,
-            locality: userProfile.postalCodeDetails.locality,
-            country: userProfile.postalCodeDetails.country
+            postalCode: userProfile.postalCode,
+            locality: userProfile.postalCodeDetails?.locality,
+            country: userProfile.postalCodeDetails?.country
         },
         showCity: userProfile.showCity
     };
