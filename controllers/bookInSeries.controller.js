@@ -190,6 +190,14 @@ exports.findAllSeries = async (req, res) => {
         const offset = (page - 1) * limit;
         const { seriesName } = req.query;
 
+        if (isNaN(page) || page <= 0) {
+            return res.status(400).json({ success: false, message: "Page must be a positive integer" });
+        }
+        if (isNaN(limit) || limit <= 0) {
+            return res.status(400).json({ success: false, message: "Limit must be a positive integer" });
+        }
+        
+
         const where = {};
         if (seriesName) {
             where.seriesName = {
@@ -233,19 +241,9 @@ exports.findAllSeries = async (req, res) => {
                     ],
                     [
                         db.sequelize.literal(`(
-                            SELECT GROUP_CONCAT(DISTINCT p.personName ORDER BY p.personName SEPARATOR ', ')
-                            FROM person AS p
-                            JOIN bookAuthor AS ba ON p.personId = ba.personId
-                            JOIN work AS w ON ba.workId = w.workId
-                            WHERE w.seriesId = BookInSeries.seriesId
-                        )`),
-                        'authors'
-                    ],
-                    [
-                        db.sequelize.literal(`(
                             SELECT MIN(be.publicationDate)
                             FROM bookEdition AS be
-                            JOIN work AS w ON be.workId = w.workId
+                            JOIN work AS w ON be.UUID = w.primaryEditionUUID
                             WHERE w.seriesId = BookInSeries.seriesId
                         )`),
                         'firstPublishedDate'
@@ -254,7 +252,7 @@ exports.findAllSeries = async (req, res) => {
                         db.sequelize.literal(`(
                             SELECT MAX(be.publicationDate)
                             FROM bookEdition AS be
-                            JOIN work AS w ON be.workId = w.workId
+                            JOIN work AS w ON be.UUID = w.primaryEditionUUID
                             WHERE w.seriesId = BookInSeries.seriesId
                         )`),
                         'lastPublishedDate'
@@ -265,11 +263,23 @@ exports.findAllSeries = async (req, res) => {
                 {
                     model: Work,
                     attributes: ['primaryEditionUUID'],
-                    include: [{
-                        model: BookEdition,
-                        attributes: ['coverImage'],
-                        where: { UUID: { [Op.eq]: db.sequelize.col('primaryEditionUUID') } }
-                    }]
+                    include: [
+                        {
+                            model: BookEdition,
+                            attributes: ['coverImage'],
+                            where: { UUID: { [Op.eq]: db.sequelize.col('primaryEditionUUID') } }
+                        },
+                        {
+                            model: BookAuthor,
+                            as: 'BookAuthors',
+                            attributes: ['personId'],
+                            include: [{
+                                model: Person,
+                                as: 'Person',
+                                attributes: ['personName']
+                            }]
+                        }
+                    ]
                 }
             ],
             group: ['BookInSeries.seriesId'],
@@ -290,16 +300,29 @@ exports.findAllSeries = async (req, res) => {
             currentPage: page,
             series: series.map(s => {
                 let publicationRange = 'Unknown';
-                if (s.dataValues.firstPublishedDate && s.dataValues.lastPublishedDate) {
+                if (s.dataValues.firstPublishedDate && s.dataValues.lastPublishedDate && (s.dataValues.firstPublishedDate != s.dataValues.lastPublishedDate)) {
                     publicationRange = `${s.dataValues.firstPublishedDate.split('-')[0]} - ${s.dataValues.lastPublishedDate.split('-')[0]}`;
-                } else if (s.dataValues.firstPublishedDate) {
+                } else if (s.dataValues.firstPublishedDate && !s.dataValues.lastPublishedDate || s.dataValues.firstPublishedDate == s.dataValues.lastPublishedDate ) {
                     publicationRange = `${s.dataValues.firstPublishedDate.split('-')[0]} - Present`;
-                } else if (s.dataValues.lastPublishedDate) {
-                    publicationRange = `Unknown - ${s.dataValues.lastPublishedDate.split('-')[0]}`;
+                } else if (!s.dataValues.firstPublishedDate && s.dataValues.lastPublishedDate || (s.dataValues.firstPublishedDate && !s.dataValues.lastPublishedDate)) {
+                    publicationRange = `${s.dataValues.lastPublishedDate.split('-')[0]}`;
                 }
 
                 // Retrieve cover images for primary editions
                 const coverImages = s.Works.map(work => work.BookEditions[0]?.coverImage).filter(Boolean);
+
+                // Retrieve authors for the series
+                const authors = [];
+                s.Works.forEach(work => {
+                    work.BookAuthors.forEach(author => {
+                        if (!authors.some(a => a.personId === author.personId)) {
+                            authors.push({
+                                personId: author.personId,
+                                personName: author.Person.personName
+                            });
+                        }
+                    });
+                });
 
                 return {
                     seriesId: s.seriesId,
@@ -308,7 +331,7 @@ exports.findAllSeries = async (req, res) => {
                     worksCount: s.dataValues.worksCount,
                     totalReviews: s.dataValues.totalReviews,
                     averageLiteraryRating: s.dataValues.averageLiteraryRating ? parseFloat(s.dataValues.averageLiteraryRating).toFixed(2) : null,
-                    authors: s.dataValues.authors,
+                    authors: authors,
                     publicationRange,
                     coverImages: coverImages,
                     links: [{ rel: "self", href: `/series/${s.seriesId}`, method: "GET" }]
@@ -321,17 +344,13 @@ exports.findAllSeries = async (req, res) => {
     }
 };
 
-
-
-
-
 /**
-* Retrieve a single series by ID with detailed information.
-* 
-* @param {Object} req - Express request object
-* @param {Object} res - Express response object
-* @returns {Promise<Object>} JSON response with success status and data
-*/
+ * Retrieve a single series by ID with detailed information.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and data
+ */
 exports.findSeriesById = async (req, res) => {
     try {
         const { seriesId } = req.params;
@@ -341,17 +360,23 @@ exports.findSeriesById = async (req, res) => {
             include: [
                 {
                     model: Work,
+                    attributes: ['workId', 'averageLiteraryRating', 'seriesOrder', 'totalReviews', 'primaryEditionUUID'],
                     include: [
                         {
                             model: BookAuthor,
+                            as: 'BookAuthors',
+                            attributes: ['personId'],
                             include: {
                                 model: Person,
-                                attributes: ['personId', 'personName']
+                                as: 'Person',
+                                attributes: ['personName']
                             }
                         },
                         {
-                            model: LiteraryReview,
-                            attributes: []
+                            model: BookEdition,
+                            as: 'BookEditions',
+                            where: { UUID: { [Op.eq]: db.sequelize.col('primaryEditionUUID') } },
+                            attributes: ['title', 'publicationDate', 'synopsis', 'coverImage']
                         }
                     ]
                 }
@@ -362,56 +387,31 @@ exports.findSeriesById = async (req, res) => {
         if (!series) {
             return res.status(404).json({ success: false, message: 'Series not found.' });
         }
-        
-        // Count the number of works in the series
-        const worksCount = await Work.count({ where: { seriesId } });
-        
+
         // Prepare the response data
         const seriesData = {
             seriesId: series.seriesId,
             seriesName: series.seriesName,
             seriesDescription: series.seriesDescription,
-            worksCount,
-            works: await Promise.all(series.Works.map(async work => {
-                // Find the book edition that matches the original title and publication date of the work
-                const bookEdition = await BookEdition.findOne({
-                    where: {
-                        workId: work.workId,
-                        title: { [Op.eq]: work.originalTitle },
-                        publicationDate: { [Op.eq]: work.firstPublishedDate }
-                    },
-                    order: [['publicationDate', 'ASC']],
-                    limit: 1,
-                    attributes: ['ISBN', 'title', 'publicationDate', 'synopsis', 'coverImage']
-                });
-                
-                // Calculate the average rating for the work
-                const averageRating = await LiteraryReview.findOne({
-                    where: { workId: work.workId },
-                    attributes: [[db.sequelize.fn('AVG', db.sequelize.col('literaryRating')), 'averageRating']],
-                    raw: true
-                });
-                
-                // Count the number of reviews and editions for the work
-                const reviewsCount = await LiteraryReview.count({ where: { workId: work.workId } });
-                const editionsCount = await BookEdition.count({ where: { workId: work.workId } });
-                
-                // Prepare the work data
-                return {
-                    workId: work.workId,
-                    originalTitle: work.originalTitle,
-                    firstPublishedDate: work.firstPublishedDate,
-                    authors: work.bookAuthors.map(ba => ba.person.personName).join(', '),
-                    averageRating: averageRating ? parseFloat(averageRating.averageRating).toFixed(2) : '0.00',
-                    reviewsCount,
-                    editionsCount,
-                    synopsis: bookEdition ? bookEdition.synopsis : 'Synopsis not available.',
-                    coverImage: bookEdition ? bookEdition.coverImage : 'Cover image not available.',
-                    links: [{ rel: "self", href: `/works/${work.workId}`, method: "GET" }]
-                };
+            works: series.Works.map(work => ({
+                workId: work.workId,
+                seriesOrder: work.seriesOrder,
+                authors: work.BookAuthors.map(author => ({
+                    personId: author.personId,
+                    personName: author.Person.personName
+                })),
+                averageLiteraryRating: work.averageLiteraryRating ? parseFloat(work.averageLiteraryRating).toFixed(2) : null,
+                totalReviews: work.totalReviews,
+                editionsCount: work.BookEditions.length,
+                primaryEdition: work.BookEditions[0] ? {
+                    title: work.BookEditions[0].title,
+                    publicationDate: work.BookEditions[0].publicationDate,
+                    synopsis: work.BookEditions[0].synopsis,
+                    coverImage: work.BookEditions[0].coverImage
+                } : {}
             }))
         };
-        
+
         // Send the response with the series data
         res.status(200).json({
             success: true,
@@ -424,3 +424,4 @@ exports.findSeriesById = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the series." });
     }
 };
+
