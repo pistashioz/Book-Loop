@@ -1,5 +1,5 @@
 const db = require('../models');
-const { Publisher, Work, BookEdition } = db;
+const { Publisher, Work, BookEdition, BookInSeries, BookContributor, BookAuthor, Person, Role } = db;
 const { ValidationError, Op } = require('sequelize');
 
 
@@ -14,17 +14,26 @@ exports.create = async (req, res) => {
     try {
         const { publisherName } = req.body;
 
+        // Validate publisher name
+        if (!publisherName) {
+            return res.status(400).json({ success: false, message: 'Publisher name is required.' });
+        }
+
         // Check for duplicate publisher name
         const existingPublisher = await Publisher.findOne({ where: { publisherName } });
         if (existingPublisher) {
-            return res.status(400).json({ success: false, message: 'Publisher with this name already exists.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Publisher with this name already exists.', 
+                publisherName 
+            });
         }
 
         // Create new publisher
         const newPublisher = await Publisher.create({ publisherName });
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
-            message: 'New Publisher created successfully',
+            message: 'New Publisher created successfully.',
             publisher: newPublisher,
             links: [
                 { rel: "self", href: `/publishers/${newPublisher.publisherId}`, method: "GET" },
@@ -35,9 +44,15 @@ exports.create = async (req, res) => {
     } catch (error) {
         console.error("Error creating publisher:", error);
         if (error instanceof ValidationError) {
-            res.status(400).json({ success: false, message: error.errors.map(e => e.message) });
+            return res.status(400).json({ 
+                success: false, 
+                message: error.errors.map(e => e.message) 
+            });
         } else {
-            res.status(500).json({ success: false, message: error.message || "Some error occurred while creating the publisher" });
+            return res.status(500).json({ 
+                success: false, 
+                message: error.message || "Some error occurred while creating the publisher." 
+            });
         }
     }
 };
@@ -52,21 +67,34 @@ exports.create = async (req, res) => {
  */
 exports.findAll = async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const page = parseInt(req.query.page, 10);
+        const limit = parseInt(req.query.limit, 10);
+        console.log(`Fetching publishers with page ${page} and limit ${limit}`);
+        console.log(typeof page);
+
+        if (isNaN(page) || page < 1 || isNaN(limit) || limit < 1) {
+            return res.status(400).json({ success: false, message: "Page and limit must be positive integers." });
+        }
+
         const offset = (page - 1) * limit;
 
         // Fetch total count of publishers
         const totalItems = await Publisher.count();
 
-        // Fetch paginated publishers with related book editions
+        // Fetch paginated publishers with related book editions and most recent publication date
         const publishers = await Publisher.findAll({
             limit,
             offset,
-            include: [{
-                model: BookEdition,
-                attributes: ['ISBN']
-            }]
+            include: [
+                {
+                    model: BookEdition,
+                    attributes: ['publicationDate'],
+                    required: false
+                }
+            ],
+            order: [
+                ['publisherName', 'ASC']
+            ]
         });
 
         const totalPages = Math.ceil(totalItems / limit);
@@ -77,12 +105,17 @@ exports.findAll = async (req, res) => {
         console.log(`Current page: ${page}`);
         console.log(`Publishers fetched:`, publishers.map(pub => pub.publisherName));
 
-        // Transform publishers to include publication count
-        const publishersWithCount = publishers.map(publisher => {
+        // Transform publishers to include publication count and most recent publication date
+        const publishersWithDetails = publishers.map(publisher => {
             const publicationCount = publisher.BookEditions.length;
+            const mostRecentPublication = publisher.BookEditions.reduce((latest, edition) => {
+                return !latest || new Date(edition.publicationDate) > new Date(latest) ? edition.publicationDate : latest;
+            }, null);
             return {
-                ...publisher.toJSON(),
-                publicationCount
+                publisherId: publisher.publisherId,
+                publisherName: publisher.publisherName,
+                publicationCount,
+                mostRecentPublication
             };
         });
 
@@ -91,15 +124,17 @@ exports.findAll = async (req, res) => {
             totalItems,
             totalPages,
             currentPage: page,
-            publishers: publishersWithCount
+            publishers: publishersWithDetails,
+            links: [
+                { rel: "self", href: `/publishers?page=${page}&limit=${limit}`, method: "GET" },
+                { rel: "create", href: `/publishers`, method: "POST" }
+            ]
         });
     } catch (error) {
         console.error("Error fetching publishers:", error);
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching publishers" });
     }
 };
-
-
 
 
 /**
@@ -112,9 +147,14 @@ exports.findAll = async (req, res) => {
 exports.findEditionsByPublisher = async (req, res) => {
     try {
         const { publisherId } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const page = parseInt(req.query.page, 10);
+        const limit = parseInt(req.query.limit, 10);
         const offset = (page - 1) * limit;
+
+        // Validate page and limit parameters
+        if (isNaN(page) || page < 1 || isNaN(limit) || limit < 1) {
+            return res.status(400).json({ success: false, message: "Page and limit must be positive integers." });
+        }
 
         // Check if the publisher exists
         const publisher = await Publisher.findByPk(publisherId);
@@ -130,8 +170,72 @@ exports.findEditionsByPublisher = async (req, res) => {
             where: { publisherId },
             limit,
             offset,
-            attributes: ['ISBN', 'title', 'editionType', 'language', 'pageNumber', 'publicationDate', 'coverImage'],
+            attributes: ['UUID', 'title', 'coverImage', 'publicationDate', 'pageNumber'],
+            include: [
+                {
+                    model: Work,
+                    attributes: ['totalReviews', 'averageLiteraryRating', 'seriesId', 'seriesOrder'],
+                    include: [
+                        {
+                            model: BookInSeries,
+                            as: 'BookInSeries',
+                            attributes: ['seriesId', 'seriesName', 'seriesDescription']
+                        }, 
+                        {
+                            model: BookAuthor,
+                            as: 'BookAuthors',
+                            attributes: ['personId'],
+                            include: [
+                                { model: Person, as: 'Person' ,attributes: ['personId', 'personName'] }]
+                        }
+                    ]
+                },
+                {
+                    model: BookContributor,
+                    include: [
+                        {
+                            model: Person,
+                            attributes: ['personId', 'personName']
+                        },
+                        {
+                            model: Role,
+                            attributes: ['roleName']
+                        }
+                    ]
+                }
+            ],
+            order: [['publicationDate', 'DESC']]
         });
+
+        
+
+        // Transform the editions to include additional details
+        const formattedEditions = editions.map(edition => ({
+            UUID: edition.UUID,
+            title: edition.title,
+            coverImage: edition.coverImage,
+            publicationDate: edition.publicationDate,
+            pageNumber: edition.pageNumber,
+            workDetails: {
+                totalReviews: edition.Work.totalReviews,
+                averageLiteraryRating: edition.Work.averageLiteraryRating,
+                author: edition.Work.BookAuthors.map(author => ({
+                    personId: author.Person.personId,
+                    personName: author.Person.personName
+                })),
+                series: edition.Work.BookInSeries ? {
+                    seriesId: edition.Work.BookInSeries.seriesId,
+                    seriesName: edition.Work.BookInSeries.seriesName,
+                    seriesDescription: edition.Work.BookInSeries.seriesDescription,
+                    seriesOrder: edition.Work.seriesOrder
+                } : null
+            },
+            contributors: edition.bookContributors.map(contributor => ({
+                personId: contributor.person.personId,
+                personName: contributor.person.personName,
+                roles: contributor ? contributor.Role.roleName : null
+            }))
+        }));
 
         const totalPages = Math.ceil(totalItems / limit);
 
@@ -140,7 +244,7 @@ exports.findEditionsByPublisher = async (req, res) => {
             totalItems,
             totalPages,
             currentPage: page,
-            editions
+            editions: formattedEditions
         });
     } catch (error) {
         console.error("Error fetching editions by publisher:", error);
@@ -148,6 +252,68 @@ exports.findEditionsByPublisher = async (req, res) => {
     }
 };
 
+/**
+ * Update a publisher's name by ID.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
+exports.updatePublisher = async (req, res) => {
+    try {
+        const { publisherId } = req.params;
+        const { publisherName } = req.body;
+
+        // Validate publisher name
+        if (!publisherName) {
+            return res.status(400).json({ success: false, message: 'Publisher name is required.' });
+        }
+
+        // Check if the publisher exists
+        const publisher = await Publisher.findByPk(publisherId);
+        if (!publisher) {
+            return res.status(404).json({ success: false, message: 'Publisher not found.', publisherId });
+        }
+
+        // Check for duplicate publisher name
+        const existingPublisher = await Publisher.findOne({ where: { publisherName } });
+        if (existingPublisher && existingPublisher.publisherId !== publisherId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Publisher with this name already exists.', 
+                publisherName 
+            });
+        }
+
+        // Update publisher name
+        publisher.publisherName = publisherName;
+        await publisher.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Publisher name updated successfully.',
+            publisher,
+            links: [
+                { rel: "self", href: `/publishers/${publisher.publisherId}`, method: "GET" },
+                { rel: "delete", href: `/publishers/${publisher.publisherId}`, method: "DELETE" },
+                { rel: "modify", href: `/publishers/${publisher.publisherId}`, method: "PUT" },
+            ]
+        });
+    } catch (error) {
+        console.error("Error updating publisher:", error);
+        if (error instanceof ValidationError) {
+            return res.status(400).json({ 
+                success: false, 
+                message: error.errors.map(e => e.message) 
+            });
+        } else {
+            return res.status(500).json({ 
+                success: false, 
+                message: error.message || "Some error occurred while updating the publisher." 
+            });
+        }
+    }
+};
 
 
 
@@ -164,7 +330,7 @@ exports.deletePublisher = async (req, res) => {
         // Check if the publisher exists
         const publisher = await Publisher.findByPk(publisherId);
         if (!publisher) {
-            return res.status(404).json({ success: false, message: 'Publisher not found.' });
+            return res.status(404).json({ success: false, message: 'Publisher not found.', publisherId });
         }
 
         // Check if the publisher has any associated book editions
@@ -173,15 +339,16 @@ exports.deletePublisher = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'Cannot delete publisher with associated book editions.',
+                publisherId,
                 links: [{ rel: 'self', href: `/publishers/${publisherId}/editions`, method: 'GET' }]
             });
         }
 
         // Delete the publisher
         await publisher.destroy();
-        res.status(204).json({ success: true, message: 'Publisher deleted successfully.' });
+        return res.status(200).json({ success: true, message: 'Publisher deleted successfully.' });
     } catch (error) {
         console.error("Error deleting publisher:", error);
-        res.status(500).json({ success: false, message: error.message || "Some error occurred while deleting the publisher." });
+        return res.status(500).json({ success: false, message: error.message || "Some error occurred while deleting the publisher." });
     }
 };

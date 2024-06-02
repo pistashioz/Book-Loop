@@ -19,6 +19,9 @@ router.route('/')
     .get(verifyToken, isAdmin, workController.findAll)
     .post(verifyToken, isAdmin, workController.create);
 
+router.route('/editions')
+    .get(workController.getEditions);
+
 // Routes to handle operations on a specific work by ID
 router.route('/:workId')
     .get(verifyToken, isAdmin, workController.findWork)
@@ -27,12 +30,15 @@ router.route('/:workId')
 
 // Routes to handle operations on editions of a specific work by ID
 router.route('/:workId/editions')
-    .get( workController.getEditions)
     .post(verifyToken, isAdmin, workController.addEdition);
 
-router.route('/:workId/editions/:bookEditionId') /// falta esta
+router.route('/:workId/editions/:editionUUID/contributors')
+    .post(verifyToken, isAdmin, workController.addContributor)
+    .delete(verifyToken, isAdmin, workController.removeContributor);
+
+router.route('/:workId/editions/:editionUUID')
     .get(workController.getBookEdition)
-    .patch(verifyToken, isAdmin,workController.updateBookEdition)
+    .patch(verifyToken, isAdmin, workController.updateBookEdition)
     .delete(verifyToken, isAdmin, workController.removeBookEdition);
 
 // Routes to handle operations on reviews of a specific work by ID
@@ -42,7 +48,7 @@ router.route('/:workId/reviews')
 
 router.route('/:workId/reviews/:literaryReviewId')
     .patch(verifyToken, workController.updateReview)
-    // .get(workController.getReview) // i think this is not necessary for now as the info we would get it's the same we would get from .getReviews - if more features would be added in the future then it would be necessary to add this route
+    .get(workController.getReview) // i think this is not necessary for now as the info we would get it's the same we would get from .getReviews - if more features would be added in the future then it would be necessary to add this route
     .delete(verifyToken, workController.deleteReview);
 
 router.route('/:workId/reviews/:literaryReviewId/likes')
@@ -62,19 +68,22 @@ router.route('/:workId/reviews/:literaryReviewId/comments/:commentId/likes')
     .post(verifyToken, workController.likeComment)
     .delete(verifyToken, workController.removeLikeComment);
 
-    // Routes to handle operations on authors and genres of a specific work by ID
+// Routes to handle operations on authors and genres of a specific work by ID
 router.route('/:workId/authors')
-.post(verifyToken, isAdmin, workController.addAuthor)
-.delete(verifyToken, isAdmin, workController.removeAuthor);
+    .post(verifyToken, isAdmin, workController.addAuthor);
+
+router.route('/:workId/authors/:authorId')
+    .delete(verifyToken, isAdmin, workController.removeAuthor);
 
 router.route('/:workId/genres')
-.post(verifyToken, isAdmin, workController.addGenre)
-.delete(verifyToken, isAdmin, workController.removeGenre);
+    .post(verifyToken, isAdmin, workController.addGenre);
+
+router.route('/:workId/genres/:genreId')
+    .delete(verifyToken, isAdmin, workController.removeGenre);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {
     res.status(404).json({ message: 'The requested work resource could not be found. Please check the URL and API documentation.' });
 });
-
 
 module.exports = router;

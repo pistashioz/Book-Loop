@@ -77,6 +77,17 @@ router.route('/:id')
 /*     .put(usersController.update)
     .delete(usersController.delete); */
 
+
+    
+// // Toggle suspension of a user (suspend/unsuspend)
+// router.patch('/users/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
+
+// // Get users eligible for deletion
+// router.get('/users/scheduled_to_delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
+
+// // Delete a user
+// router.delete('/users/:userId', verifyToken, isAdmin, adminController.deleteUser);
+
 router.post('/login', usersController.login);
 router.post('/logout', verifyToken, usersController.logout);
 

@@ -19,11 +19,19 @@ router.route('/')
     .get(personController.findAll)
     .post(verifyToken, isAdmin, personController.create);
 
+    router.route('/roles')
+    .get(verifyToken, isAdmin, personController.getAllRoles);
 
 router.route('/:personId')
     .get(personController.findPerson) 
     .patch(verifyToken, isAdmin, personController.updatePerson)
     .delete(verifyToken, isAdmin, personController.removePerson);
+
+router.route('/:personId/roles')
+.post(verifyToken, isAdmin, personController.addRole)
+.delete(verifyToken, isAdmin, personController.removeRole);
+
+
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

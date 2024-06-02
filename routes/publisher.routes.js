@@ -19,12 +19,13 @@ router.route('/')
     .get(publisherController.findAll)
     .post(verifyToken, isAdmin, publisherController.create);
 
-
 router.route('/:publisherId')
-    .delete(verifyToken, isAdmin, publisherController.deletePublisher);
+    .delete(verifyToken, isAdmin, publisherController.deletePublisher)
+    .put(verifyToken, isAdmin, publisherController.updatePublisher);
 
-    router.route('/:publisherId/editions')
+router.route('/:publisherId/editions')
     .get(publisherController.findEditionsByPublisher);
+
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

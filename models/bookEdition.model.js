@@ -1,32 +1,42 @@
+const { v4: uuidv4 } = require('uuid');
 const { getEnumValues } = require('../utils/sequelizeHelpers');
 
 module.exports = (sequelize, DataTypes) => {
   const BookEdition = sequelize.define('BookEdition', {
+    UUID: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     ISBN: {
       type: DataTypes.STRING(20),
-      primaryKey: true,
       validate: {
         isValidISBN(value) {
-          if (!/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
+          if (value && !/^(97(8|9))?\d{9}(\d|X)$/.test(value)) {
             throw new Error('Invalid ISBN format.');
+          }
+        },
+        canBeNullIfAudiobook(value) {
+          if (!value && this.editionType !== 'Audiobook') {
+            throw new Error('ISBN is required for non-audiobook editions.');
           }
         }
       }
     },
     workId: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
-        model: 'work', 
-        key: 'workId' 
+        model: 'work',
+        key: 'workId'
       }
     },
     publisherId: {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'publisher', 
-        key: 'publisherId' 
+        model: 'publisher',
+        key: 'publisherId'
       }
     },
     title: {
@@ -54,10 +64,13 @@ module.exports = (sequelize, DataTypes) => {
     publicationDate: {
       type: DataTypes.DATEONLY,
     },
-    language: {
-      type: DataTypes.STRING,
+    languageId: {
+      type: DataTypes.INTEGER,
       allowNull: false,
-      validate: { notNull: { msg: 'Language cannot be null or empty!' } }
+      references: {
+        model: 'languages',
+        key: 'languageId'
+      }
     },
     pageNumber: {
       type: DataTypes.INTEGER,
@@ -71,7 +84,10 @@ module.exports = (sequelize, DataTypes) => {
     tableName: 'bookEdition',
     timestamps: false,
     freezeTableName: true,
+    indexes: [
+      { unique: true, fields: ['ISBN'] },
+    ]
   });
-  
+
   return BookEdition;
 };

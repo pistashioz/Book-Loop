@@ -15,12 +15,12 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'userId'
             }
         },
-        ISBN: {
-            type: DataTypes.STRING(20),
+        editionUUID: {
+            type: DataTypes.CHAR(36),
             allowNull: false,
             references: {
                 model: 'bookEdition', 
-                key: 'ISBN'
+                key: 'UUID'
             }    
         },
         listingTitle: {

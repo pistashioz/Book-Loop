@@ -15,7 +15,6 @@ const MAX_SEARCH_ENTRIES = 10;
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
-    // Extract parameters and ensure they are integers
     const { username = "" } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -31,24 +30,17 @@ exports.findAll = async (req, res) => {
             attributes: [
                 'profileImage',
                 'username',
-                [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
-                [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
+                'sellerAverageRating',
+                'sellerReviewCount'
             ],
-            include: [{
-                model: db.PurchaseReview,
-                as: 'SellerReviews',  
-                attributes: [],
-                duplicating: false
-            }],            
-            group: ['User.userId'],
             order: [
                 ['username', 'ASC']
             ],
             limit,
             offset
         });
-        
-        const totalUsers = count.reduce((total, curr) => total + curr.count, 0);
+
+        const totalUsers = count;
         const totalPages = Math.ceil(totalUsers / limit);
 
         res.status(200).json({
@@ -64,12 +56,7 @@ exports.findAll = async (req, res) => {
     }
 };
 
-/**
- * Retrieves detailed information about a specific user based on user ID and optional tab parameter.
- * It conditionally fetches listings, feedback, or literary reviews based on the provided tab query.
- * @param {Request} req - The request object containing user ID in params and optional tab query.
- * @param {Response} res - The response object used to return data or error messages.
- */
+// Retrieves detailed information about a specific user based on user ID and optional tab parameter
 exports.findOne = async (req, res) => {
     const { id } = req.params;
     const tab = req.query.tab; 
@@ -82,10 +69,10 @@ exports.findOne = async (req, res) => {
                 'profileImage', 
                 'about',
                 'deliverByHand',
-                
-                [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
-                [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount'],
-                
+                'totalFollowers',
+                'totalFollowing',
+                'sellerAverageRating',
+                'sellerReviewCount'
             ],
             include: [
                 {
@@ -93,64 +80,36 @@ exports.findOne = async (req, res) => {
                     as: 'userSocialMedias',
                     attributes: ['socialMediaName', 'profileUrl']
                 },
-                
                 {
                     model: db.PostalCode,
                     as: 'postalCodeDetails',
                     attributes: ['locality', 'country'],
-                    required: false, // Only include if showCity is true
+                    required: false,
                     where: db.sequelize.where(db.sequelize.col('User.showCity'), true),
-                },                
-                {
-                    model: db.FollowRelationship,
-                    as: 'Followings',
-                    attributes: []
-                },
-                {
-                    model: db.FollowRelationship,
-                    as: 'Followers',
-                    attributes: []
-                },
-                {
-                    model: db.PurchaseReview,
-                    as: 'SellerReviews',
-                    attributes: []
                 }
-            ],
-            
-            group: ['User.userId']
+            ]
         });
-        
+
         if (!user) {
             return res.status(404).send({ message: "User not found." });
         }
-        
-        
-        // Enhance user object with counts from follow relationships
-        const followingCount = await db.FollowRelationship.count({ where: { mainUserId: id } });
-        const followersCount = await db.FollowRelationship.count({ where: { followedUserId: id } });
-        
-        // Constructing the full response object
-        const responseData  = {
+
+        const responseData = {
             ...user.dataValues,
-            // locality: user.PostalCode ? `${user.PostalCode.locality}, ${user.PostalCode.country}` : null,
-            followingCount,
-            followersCount
+            followingCount: user.totalFollowing || 0,
+            followersCount: user.totalFollowers || 0
         };
-        
-        
-        // Conditionally fetch data based on the 'tab' parameter
+
         if (!tab || tab === 'listings') {
-          responseData.listings = await fetchListings(id);
-        }        
+            responseData.listings = await fetchListings(id);
+        }
         if (tab === 'feedback') {
             responseData.feedback = await fetchFeedback(id);
         }
-        
         if (tab === 'literaryReviews') {
             responseData.literaryReviews = await fetchLiteraryReviews(id);
         }
-        
+
         res.status(200).json(responseData);
     } catch (error) {
         console.error("Error retrieving user and related data:", error);
@@ -254,7 +213,7 @@ async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
             'literaryReview', 
             'literaryRating',
             'creationDate',
-            [db.sequelize.literal(`(SELECT COUNT(*) FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'likeCount'],
+            'totalLikes',
             [db.sequelize.literal(`(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'commentCount']
         ],
         include: [{
@@ -420,12 +379,16 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 // Helper function to set cookies for refresh token and access token
 function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) {
     const isProduction = process.env.NODE_ENV === 'production';
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken', { path: '/users/me/refresh' });
+
     res.cookie('accessToken', accessToken, {
         httpOnly: true,
         secure: isProduction,
         expires: accessTokenCookieExpiry,
         sameSite: isProduction ? 'None' : 'Strict'
     });
+
     res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: isProduction,
@@ -433,7 +396,10 @@ function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken
         sameSite: isProduction ? 'None' : 'Strict',
         path: '/users/me/refresh'
     });
+
+    console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
+
 
 
 // Login action for user
@@ -471,9 +437,17 @@ exports.login = async (req, res) => {
             where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
             transaction: t
         });
+
+        // Invalidate existing session if found
         if (existingSession) {
-            await t.rollback();
-            return res.status(409).json({ message: "Active session already exists for this device and browser." });
+            await SessionLog.update(
+                { endTime: new Date() },
+                { where: { sessionId: existingSession.sessionId }, transaction: t }
+            );
+            await Token.update(
+                { invalidated: true, lastUsedAt: new Date() },
+                { where: { sessionId: existingSession.sessionId, invalidated: false }, transaction: t }
+            );
         }
         
         const sessionLog = await SessionLog.create({
@@ -513,47 +487,50 @@ exports.login = async (req, res) => {
     }
 };
 
-/**
- * Function to refresh tokens (to be called by a dedicated refresh endpoint)
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>} JSON response with success status or an error message
- */
+// Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
-
+    console.log(`Received refreshToken: ${refreshToken}`);
+    
     if (!refreshToken) {
-        return res.status(403).json({ message: "Session invalid, please log in again.", redirectTo: '/login' });
+        return res.status(403).json({ message: "No refresh token found. Please log in again.", redirectTo: '/login' }); 
     }
 
     try {
+        console.log(`Attempting to refresh tokens for user with refreshToken: ${refreshToken}`);
         const existingToken = await Token.findOne({
             where: { tokenKey: refreshToken, tokenType: 'refresh' }
         });
-
+        
+        console.log('Existing token found:', existingToken);
+        
         if (!existingToken || existingToken.expiresAt < new Date() || existingToken.invalidated) {
             if (existingToken) {
                 await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken } });
+                console.log('Existing token invalidated due to expiration or invalidation.');
             }
             return res.status(401).json({ message: "Token expired or invalidated, please log in again.", redirectTo: '/login' });
         }
 
         const { id, session } = jwt.verify(refreshToken, config.secret);
+        console.log(`Verified JWT. User ID: ${id}, Session ID: ${session}`);
 
         const { token: newAccessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(id, session);
         const { refreshToken: newRefreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(id, session);
 
         await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
+        console.log('New tokens issued and database updated.');
 
-        setTokenCookies(res, newAccessToken, accessTokenExpires, accessTokenCookieExpires, newRefreshToken, refreshTokenExpires, refreshTokenCookieExpires);
+        setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
 
-        res.status(200).json({ success: true });
+        return res.status(200).json({ success: true });
     } catch (error) {
         console.error("Failed to refresh tokens:", error);
-        res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
+        return res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
     }
 };
+
+
 
 
 
@@ -1584,14 +1561,15 @@ exports.createEntry = async (req, res) => {
 };
 
 // Get all navigation history entries for the user, optionally filtered by type
+// Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {
     try {
         const { type, page = 1, limit = 10 } = req.query;
         const offset = (page - 1) * limit;
         const userId = req.userId;
-        
+
         let whereClause = { userId };
-        
+
         if (type) {
             if (type === 'search') {
                 // Fetch search term entries
@@ -1612,7 +1590,7 @@ exports.getEntries = async (req, res) => {
             }
             whereClause.entityTypeId = entityType.entityTypeId;
         }
-        
+
         const { rows: entries, count: totalCount } = await NavigationHistory.findAndCountAll({
             where: whereClause,
             include: [{ model: EntityType, attributes: ['entityTypeName'] }],
@@ -1620,11 +1598,11 @@ exports.getEntries = async (req, res) => {
             limit: type === 'search' ? 5 : limit,
             offset
         });
-        
+
         // Retrieve additional details based on the entityType
         const detailedEntries = await Promise.all(entries.map(async (entry) => {
             let details = null;
-            
+
             if (entry.entityTypeId === 1) { // User
                 details = await User.findOne({
                     where: { userId: entry.elementId },
@@ -1632,15 +1610,9 @@ exports.getEntries = async (req, res) => {
                         'userId',
                         'username',
                         'profileImage',
-                        [db.sequelize.fn("ROUND", db.sequelize.fn("AVG", db.sequelize.col("SellerReviews.sellerRating")), 1), 'averageRating'],
-                        [db.sequelize.fn("COUNT", db.sequelize.col("SellerReviews.sellerUserId")), 'reviewsCount']
-                    ],
-                    include: [{
-                        model: db.PurchaseReview,
-                        as: 'SellerReviews',
-                        attributes: []
-                    }],
-                    group: ['User.userId']
+                        'sellerAverageRating', // Use stored value for average rating
+                        'sellerReviewCount'    // Use stored value for review count
+                    ]
                 });
             } else if (entry.entityTypeId === 2) { // Listing
                 const listing = await Listing.findOne({
@@ -1658,7 +1630,7 @@ exports.getEntries = async (req, res) => {
                     ],
                     group: ['Listing.listingId']
                 });
-                
+
                 if (listing) {
                     details = {
                         listingId: listing.listingId,
@@ -1681,8 +1653,8 @@ exports.getEntries = async (req, res) => {
                         {
                             model: db.Work,
                             attributes: [
-                                [db.sequelize.literal(`(SELECT COUNT(*) FROM literaryReview WHERE literaryReview.workId = Work.workId)`), 'literaryReviewsCount'],
-                                [db.sequelize.literal(`ROUND((SELECT AVG(literaryReview.literaryRating) FROM literaryReview WHERE literaryReview.workId = Work.workId), 2)`), 'averageLiteraryRating']
+                                'totalReviews', 
+                                'averageLiteraryRating' 
                             ],
                             include: [{
                                 model: db.LiteraryReview,
@@ -1698,15 +1670,15 @@ exports.getEntries = async (req, res) => {
                     searchTerm: entry.searchTerm
                 };
             }
-            
+
             return {
                 historyId: entry.historyId,
                 details
             };
         }));
-        
+
         const totalPages = Math.ceil(totalCount / limit);
-        
+
         res.status(200).json({
             currentPage: parseInt(page, 10),
             totalPages,
@@ -1718,7 +1690,6 @@ exports.getEntries = async (req, res) => {
         res.status(500).json({ message: 'Error fetching navigation history', error: error.message });
     }
 };
-
 
 
 

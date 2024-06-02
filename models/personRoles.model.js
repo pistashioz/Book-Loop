@@ -1,14 +1,6 @@
+// models/personRole.model.js
 module.exports = (sequelize, DataTypes) => {
-    const BookContributor = sequelize.define("bookContributor", {
-        editionUUID: {
-            type: DataTypes.CHAR(36),
-            primaryKey: true,
-            allowNull: false,
-            references: {
-                model: 'bookEdition',
-                key: 'UUID'
-            },
-        },
+    const PersonRole = sequelize.define("PersonRole", {
         personId: {
             type: DataTypes.INTEGER,
             primaryKey: true,
@@ -20,6 +12,7 @@ module.exports = (sequelize, DataTypes) => {
         },
         roleId: {
             type: DataTypes.INTEGER,
+            primaryKey: true,
             allowNull: false,
             references: {
                 model: "roles",
@@ -27,10 +20,9 @@ module.exports = (sequelize, DataTypes) => {
             }
         }
     }, {
+        tableName: "personRoles",
         timestamps: false,
-        freezeTableName: true,
-        tableName: 'bookContributor'
+        freezeTableName: true
     });
-
-    return BookContributor;
+    return PersonRole;
 };

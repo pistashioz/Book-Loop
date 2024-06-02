@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const dayjs = require('dayjs');
+const duration = require('dayjs/plugin/duration');
+dayjs.extend(duration); 
 const config = require('../config/auth.config');
 const db = require('../models');
 const { Token, SessionLog } = db;
@@ -11,72 +13,87 @@ const { verifyTokenHelper } = require('../utils/jwtHelpers');
  */
 exports.verifyToken = async (req, res, next) => {
     const token = req.cookies.accessToken;
+
     if (!token) {
-        return res.status(403).send({ message: 'Access Token is missing, please log in again!' });
+        return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
     }
 
     try {
+        console.log('Decoding access token...');
         const decoded = await verifyTokenHelper(token);
         const session = await SessionLog.findOne({ where: { sessionId: decoded.session, endTime: null } });
         if (!session) {
+            console.log('Invalid session.');
             res.clearCookie('accessToken');
             res.clearCookie('refreshToken', { path: '/users/me/refresh' });
-            return res.status(403).send({ message: 'Session has been terminated. Please log in again.' });
+            return res.status(403).send({ redirectTo: '/login' }); // Indicate that login is required
         }
         req.userId = decoded.id;
         req.sessionId = decoded.session;
-        
-        // Check if the token needs refresh
+
         if (decoded.needsRefresh) {
-            return res.status(401).send({ message: 'Token nearing expiration. Please refresh token.', refresh: true });
+            console.log('Access token has expired.');
+            return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
         }
 
         next();
     } catch (error) {
-        res.clearCookie('accessToken');
-        res.clearCookie('refreshToken', { path: '/users/me/refresh' });
-        if (error.name === 'TokenExpiredError') {
-            console.log('Token has expired. Please refresh token.');
-            return res.status(401).send({ message: 'Token has expired. Please refresh token.', refresh: true });
-        } else if (error.name === 'JsonWebTokenError') {
-            return res.status(403).send({ message: 'Invalid token. Please log in again.' });
+/*          */
+
+        if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
+            console.log('Error decoding access token:', error);
+            return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
         }
+
         return res.status(500).send({ message: 'Failed to authenticate token.' });
     }
 };
 
-/**
- * Issues a new access token for a given user and session.
- * Returns an object with the token, its expiry date, and the cookie expiry date.
- */
+// Function to issue access token
 exports.issueAccessToken = (userId, sessionId) => {
     try {
         const expirationMins = config.jwtExpiration;
-        const expirationTime = dayjs().add(expirationMins, 'minute').unix();
+        console.log(`The expiration time for the access token is ${expirationMins} minutes.`);
+        const expirationSeconds = dayjs.duration({ minutes: expirationMins }).asSeconds();
+        
+        console.log(`The expiration time for the access token is ${expirationSeconds} seconds.`);
+        
         const token = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-            expiresIn: expirationTime
+            expiresIn: expirationSeconds
         });
-        const cookieExpires = new Date(dayjs().add(expirationMins + 5, 'minutes').valueOf());
-        return { token, expires: new Date(dayjs().add(expirationMins, 'minutes').valueOf()), cookieExpires };
+        
+        const cookieExpires = dayjs().add(25, 'minutes').toDate();
+        
+        return { 
+            token, 
+            expires: dayjs().add(expirationMins, 'minutes').toDate(), 
+            cookieExpires 
+        };
     } catch (error) {
         console.error("Error issuing access token:", error);
         throw new Error("Failed to issue access token.");
     }
 };
 
-/**
- * Handles issuing a new refresh token for a given user and session.
- * Returns the token, its expiry date, and the cookie expiry date.
- */
+// Function to handle refresh token
 exports.handleRefreshToken = (userId, sessionId) => {
     try {
-        const expirationHours = config.jwtRefreshExpiration;
-        const expirationTime = dayjs().add(expirationHours, 'hours').unix();
+        const expirationHours = Number(config.jwtRefreshExpiration);
+        const expirationSeconds = dayjs.duration({ hours: expirationHours }).asSeconds();
+        
+        console.log(`The expiration time for the refresh token is ${expirationSeconds} seconds.`);
+        
         const refreshToken = jwt.sign({ id: userId, session: sessionId }, config.secret, {
-            expiresIn: expirationTime
+            expiresIn: expirationSeconds
         });
-        const cookieExpires = new Date(dayjs().add(expirationHours * 60 + 5, 'minutes').valueOf());
-        return { refreshToken, expires: new Date(dayjs().add(expirationHours, 'hours').valueOf()), cookieExpires };
+        
+        const cookieExpires = dayjs().add(expirationHours, 'hours').toDate();
+        
+        return { 
+            refreshToken, 
+            expires: dayjs().add(expirationHours, 'hours').toDate(), 
+            cookieExpires 
+        };
     } catch (error) {
         console.error("Error handling refresh token:", error);
         throw new Error("Failed to handle refresh token.");

@@ -17,7 +17,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-    //   return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -28,7 +28,6 @@ sequelize.authenticate()
 
 const db = {};
 db.sequelize = sequelize;
-
 // Load models
 db.User = require('./user.model.js')(sequelize, DataTypes);
 db.UserConfiguration = require('./userConfiguration.model.js')(sequelize, DataTypes);
@@ -58,9 +57,13 @@ db.UserFavoriteGenre = require('./userFavoriteGenre.model.js')(sequelize, DataTy
 db.UserFavoriteAuthor = require('./userFavoriteAuthor.model.js')(sequelize, DataTypes);
 db.Genre = require('./genre.model.js')(sequelize, DataTypes);
 db.Person = require('./person.model.js')(sequelize, DataTypes);
+db.Role = require('./role.model.js')(sequelize, DataTypes);
+db.PersonRole = require('./personRoles.model.js')(sequelize, DataTypes);
 db.BookAuthor = require('./bookAuthor.model.js')(sequelize, DataTypes);
 db.BookGenre = require('./bookGenre.model.js')(sequelize, DataTypes);
 db.BookContributor = require('./bookContributor.model.js')(sequelize, DataTypes);
+db.Language = require('./language.model.js')(sequelize, DataTypes);
+
 
 // Define relationships
 db.User.hasMany(db.UserConfiguration, { foreignKey: 'userId', onDelete: 'CASCADE' });
@@ -109,29 +112,35 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
 
-db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionISBN', onDelete: 'CASCADE' });
-db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionISBN' });
+db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionUUID' });
+db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionUUID' });
 
-db.Work.hasMany(db.BookAuthor, { foreignKey: 'workId', onDelete: 'CASCADE' });
-db.BookAuthor.belongsTo(db.Work, { foreignKey: 'workId' });
+db.Language.hasMany(db.BookEdition, { foreignKey: 'languageId', onDelete: 'RESTRICT' }); 
+db.BookEdition.belongsTo(db.Language, { foreignKey: 'languageId' });
 
-db.Person.hasMany(db.BookAuthor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
-db.BookAuthor.belongsTo(db.Person, { foreignKey: 'personId' });
+db.BookEdition.hasMany(db.BookContributor, { foreignKey: 'editionUUID', onDelete: 'CASCADE' });
+db.BookContributor.belongsTo(db.BookEdition, { foreignKey: 'editionUUID' });
 
 db.Person.hasMany(db.BookContributor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
 db.BookContributor.belongsTo(db.Person, { foreignKey: 'personId' });
 
-db.Work.hasMany(db.BookGenre, { foreignKey: 'workId', onDelete: 'CASCADE' });
+db.Work.hasMany(db.BookGenre, { foreignKey: 'workId', onDelete: 'CASCADE', as: 'BookGenres' });
 db.BookGenre.belongsTo(db.Work, { foreignKey: 'workId' });
 
 db.Genre.hasMany(db.BookGenre, { foreignKey: 'genreId', onDelete: 'RESTRICT' });
-db.BookGenre.belongsTo(db.Genre, { foreignKey: 'genreId' });
+db.BookGenre.belongsTo(db.Genre, { foreignKey: 'genreId', as: 'Genre' });
+
+db.Work.hasMany(db.BookAuthor, { foreignKey: 'workId', onDelete: 'CASCADE', as: 'BookAuthors' });
+db.BookAuthor.belongsTo(db.Work, { foreignKey: 'workId' });
+
+db.Person.hasMany(db.BookAuthor, { foreignKey: 'personId', onDelete: 'RESTRICT' });
+db.BookAuthor.belongsTo(db.Person, { foreignKey: 'personId', as: 'Person' });
 
 db.User.hasMany(db.Listing, { foreignKey: 'sellerUserId', onDelete: 'RESTRICT' });
 db.Listing.belongsTo(db.User, { foreignKey: 'sellerUserId' });
 
-db.BookEdition.hasMany(db.Listing, { foreignKey: 'ISBN', onDelete: 'RESTRICT' });
-db.Listing.belongsTo(db.BookEdition, { foreignKey: 'ISBN' });
+db.BookEdition.hasMany(db.Listing, { foreignKey: 'editionUUID', onDelete: 'RESTRICT' });
+db.Listing.belongsTo(db.BookEdition, { foreignKey: 'editionUUID' });
 
 db.Listing.hasMany(db.ListingImage, { foreignKey: 'listingId', onDelete: 'CASCADE' });
 db.ListingImage.belongsTo(db.Listing, { foreignKey: 'listingId' });
@@ -183,5 +192,14 @@ db.UserFavoriteAuthor.belongsTo(db.User, { foreignKey: 'userId' });
 
 db.Person.hasMany(db.UserFavoriteAuthor, { foreignKey: 'personId', onDelete: 'CASCADE' });
 db.UserFavoriteAuthor.belongsTo(db.Person, { foreignKey: 'personId' });
+
+db.Person.hasMany(db.PersonRole, { foreignKey: 'personId', onDelete: 'CASCADE' });
+db.PersonRole.belongsTo(db.Person, { foreignKey: 'personId'});
+
+db.Role.hasMany(db.PersonRole, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+db.PersonRole.belongsTo(db.Role, { foreignKey: 'roleId'});
+
+db.Role.hasMany(db.BookContributor, { foreignKey: 'roleId', onDelete: 'RESTRICT' });
+db.BookContributor.belongsTo(db.Role, { foreignKey: 'roleId' });
 
 module.exports = db;

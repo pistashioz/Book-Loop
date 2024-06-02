@@ -23,8 +23,26 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         tableName: 'likeComment',
         timestamps: false,
-        freezeTableName: true
+        freezeTableName: true,
+        hooks: {
+            afterCreate: async (like, options) => {
+                await like.incrementCommentLikeCount();
+            },
+            afterDestroy: async (like, options) => {
+                await like.decrementCommentLikeCount();
+            }
+        }
     });
+
+    LikeComment.prototype.incrementCommentLikeCount = async function() {
+        const CommentReview = this.sequelize.models.CommentReview;
+        await CommentReview.increment('totalLikes', { where: { commentId: this.commentId } });
+    };
+
+    LikeComment.prototype.decrementCommentLikeCount = async function() {
+        const CommentReview = this.sequelize.models.CommentReview;
+        await CommentReview.decrement('totalLikes', { where: { commentId: this.commentId } });
+    };
 
     return LikeComment;
 };

@@ -44,8 +44,37 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         tableName: 'purchaseReview',
         timestamps: false,
-        freezeTableName: true
+        freezeTableName: true,
+        hooks: {
+            afterCreate: async (review, options) => {
+                await updateSellerRatingAndCount(review.sellerUserId);
+            },
+            afterUpdate: async (review, options) => {
+                await updateSellerRatingAndCount(review.sellerUserId);
+            },
+            afterDestroy: async (review, options) => {
+                await updateSellerRatingAndCount(review.sellerUserId);
+            }
+        }
     });
+
+    async function updateSellerRatingAndCount(userId) {
+        const reviews = await PurchaseReview.findAll({
+            where: { sellerUserId: userId },
+            attributes: ['sellerRating']
+        });
+
+        const reviewCount = reviews.length;
+        const averageRating = reviews.reduce((sum, review) => sum + parseFloat(review.sellerRating), 0) / reviewCount;
+
+        await sequelize.models.User.update(
+            {
+                sellerReviewCount: reviewCount,
+                sellerAverageRating: averageRating.toFixed(2)
+            },
+            { where: { userId } }
+        );
+    }
 
     return PurchaseReview;
 };
