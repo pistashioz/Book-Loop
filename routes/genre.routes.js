@@ -25,6 +25,8 @@ router.route('/:genreId')
     .patch(verifyToken, isAdmin, genreController.updateGenre)
     .delete(verifyToken, isAdmin, genreController.deleteGenre);
 
+    router.route('/:genreId/remove-associations')
+    .delete(verifyToken, isAdmin, genreController.removeAssociations);
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

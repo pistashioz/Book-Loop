@@ -54,7 +54,13 @@ module.exports = (sequelize, DataTypes) => {
                 await sequelize.models.User.increment('totalReviews', { by: 1, where: { userId: review.userId } });
             },
             afterDestroy: async (review, options) => {
-                await sequelize.models.Work.decrement('totalReviews', { by: 1, where: { workId: review.workId } });
+                await review.updateWorkAverageRating();
+                const reviewCount = await LiteraryReview.count({ where: { workId: review.workId } });
+                if (reviewCount === 0) {
+                    await sequelize.models.Work.update({ totalReviews: 0, averageLiteraryRating: null }, { where: { workId: review.workId } });
+                } else {
+                    await sequelize.models.Work.decrement('totalReviews', { by: 1, where: { workId: review.workId } });
+                }
                 await sequelize.models.User.decrement('totalReviews', { by: 1, where: { userId: review.userId } });
             },
             afterUpdate: async (review, options) => {
