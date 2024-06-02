@@ -223,7 +223,7 @@ exports.findGenres = async (req, res) => {
         const page = parseInt(req.query.page, 10) || 1;
         const limit = 4; // Fixed limit of 4 genres per page
         const offset = (page - 1) * limit;
-        const { genreNames, language, filterPage = 1, filterLimit = 10 } = req.query;
+        const { genreNames, language, filterPage = 1, filterLimit = 10, simple } = req.query;
 
         let genreWhere = {};
         let genreNameArray = [];
@@ -263,6 +263,37 @@ exports.findGenres = async (req, res) => {
             } else {
                 return res.status(404).json({ success: false, message: `Language '${language}' not found.` });
             }
+        }
+
+        // Fetch all genres with works for filters, with pagination
+        const filterOffset = (parseInt(filterPage, 10) - 1) * parseInt(filterLimit, 10);
+
+        if (simple) {
+            const genresSimple = await Genre.findAll({
+                where: genreWhere,
+                attributes: ['genreId', 'genreName'],
+                limit: filterLimit, // Apply correct limit
+                offset: filterOffset, // Apply correct offset
+                order: [['genreName', 'ASC']]
+            });
+
+            const totalCountSimple = await Genre.count({
+                where: genreWhere
+            });
+
+            const totalPagesSimple = Math.ceil(totalCountSimple / filterLimit);
+
+            return res.status(200).json({
+                success: true,
+                totalItems: totalCountSimple,
+                totalPages: totalPagesSimple,
+                currentPage: filterPage,
+                genres: genresSimple,
+                links: [
+                    { rel: "self", href: `/genres?page=${filterPage}&limit=${filterLimit}&simple=true`, method: "GET" },
+                    { rel: "create", href: `/genres`, method: "POST" }
+                ]
+            });
         }
 
         // Fetch genres with associated works count
@@ -436,8 +467,6 @@ exports.findGenres = async (req, res) => {
             };
         }));
 
-        // Fetch all genres with works for filters, with pagination
-        const filterOffset = (parseInt(filterPage, 10) - 1) * parseInt(filterLimit, 10);
         const genresForFilters = await Genre.findAll({
             include: [{
                 model: BookGenre,
@@ -468,6 +497,8 @@ exports.findGenres = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching genres." });
     }
 };
+
+
 
 
 
