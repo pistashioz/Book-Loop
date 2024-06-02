@@ -19,6 +19,8 @@ router.route('/')
     .get(personController.findAll)
     .post(verifyToken, isAdmin, personController.create);
 
+    router.route('/roles')
+    .get(verifyToken, isAdmin, personController.getAllRoles);
 
 router.route('/:personId')
     .get(personController.findPerson) 
@@ -29,8 +31,7 @@ router.route('/:personId/roles')
 .post(verifyToken, isAdmin, personController.addRole)
 .delete(verifyToken, isAdmin, personController.removeRole);
 
-router.route('/roles')
-.get(personController.getAllRoles);
+
 
 // Handle unsupported routes
 router.all('*', (req, res) => {

@@ -86,14 +86,24 @@ exports.create = async (req, res) => {
     try {
         const { personName, roles } = req.body;
 
-        // Ensure roles are valid and exist
+        // Validate input data
+        if (!personName) {
+            return res.status(400).json({ success: false, message: 'Person name is required.' });
+        }
+
         if (!roles || !Array.isArray(roles) || roles.length === 0) {
             return res.status(400).json({ success: false, message: 'Roles are required and should be a non-empty array.' });
         }
 
+        // Ensure roles are valid and exist
         const validRoles = await Role.findAll({ where: { roleName: { [Op.in]: roles } } });
         if (validRoles.length !== roles.length) {
-            return res.status(400).json({ success: false, message: 'Some roles are invalid.' });
+            const invalidRoles = roles.filter(role => !validRoles.map(vr => vr.roleName).includes(role));
+            return res.status(400).json({
+                success: false,
+                message: 'Some roles are invalid.',
+                invalidRoles
+            });
         }
 
         // Check if person already exists
@@ -106,13 +116,12 @@ exports.create = async (req, res) => {
         const newPerson = await Person.create({ personName }, { transaction: t });
 
         // Create person-role associations
-        for (const role of validRoles) {
-            await PersonRole.create({ personId: newPerson.personId, roleId: role.roleId }, { transaction: t });
-        }
+        const personRoles = validRoles.map(role => ({ personId: newPerson.personId, roleId: role.roleId }));
+        await PersonRole.bulkCreate(personRoles, { transaction: t });
 
         await t.commit();
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: 'New person created successfully',
             person: newPerson,
@@ -124,16 +133,18 @@ exports.create = async (req, res) => {
         });
     } catch (err) {
         await t.rollback();
+        console.error("Error creating person:", err);
         if (err instanceof ValidationError) {
-            res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
+            return res.status(400).json({ success: false, message: err.errors.map(e => e.message) });
         } else {
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: err.message || "Some error occurred while creating the person."
             });
         }
     }
 };
+
 /**
  * Retrieve all available roles.
  * 
@@ -146,12 +157,32 @@ exports.getAllRoles = async (req, res) => {
         const roles = await Role.findAll({
             attributes: ['roleId', 'roleName']
         });
-        res.status(200).json({ success: true, roles });
+        
+        if (!roles || roles.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No roles found.'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Found ${roles.length} roles`,
+            roles,
+            links: [
+                { rel: "self", href: `/roles`, method: "GET" },
+                { rel: "create", href: `/roles`, method: "POST" }
+            ]
+        });
     } catch (error) {
         console.error("Error fetching roles:", error);
-        res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching roles" });
+        return res.status(500).json({
+            success: false,
+            message: error.message || "Some error occurred while fetching roles."
+        });
     }
 };
+
 
 /**
  * Add a role to a person.
@@ -166,36 +197,74 @@ exports.addRole = async (req, res) => {
         const { personId } = req.params;
         const { role } = req.body;
 
+        // Validate input
+        if (!role) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Role is required.' 
+            });
+        }
+
         // Ensure role is valid and exists
         const validRole = await Role.findOne({ where: { roleName: role }, transaction: t });
         if (!validRole) {
-            return res.status(400).json({ success: false, message: `Invalid role: ${role}.` });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Role '${role}' not found.`,
+                invalidRole: role
+            });
         }
 
         // Check if person exists
         const person = await Person.findByPk(personId, { transaction: t });
         if (!person) {
-            return res.status(404).json({ success: false, message: 'Person not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Person with ID '${personId}' not found.`,
+                personId
+            });
         }
 
         // Check if role association already exists
-        const existingAssociation = await PersonRole.findOne({ where: { personId, roleId: validRole.roleId }, transaction: t });
+        const existingAssociation = await PersonRole.findOne({ 
+            where: { personId, roleId: validRole.roleId }, 
+            transaction: t 
+        });
         if (existingAssociation) {
-            return res.status(400).json({ success: false, message: 'Role already associated with this person.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: `Role '${role}' is already associated with this person.`,
+                personId,
+                personName: person.personName,
+                roleId: validRole.roleId
+            });
         }
 
         // Create person-role association
         await PersonRole.create({ personId, roleId: validRole.roleId }, { transaction: t });
-
         await t.commit();
 
-        res.status(201).json({ success: true, message: 'Role added to person successfully.' });
+        return res.status(201).json({ 
+            success: true, 
+            message: `Role '${role}' added to person successfully.`,
+            personId,
+            roleId: validRole.roleId,
+            links: [
+                { rel: "self", href: `/persons/${personId}`, method: "GET" },
+                { rel: "delete", href: `/persons/${personId}`, method: "DELETE" },
+                { rel: "modify", href: `/persons/${personId}`, method: "PUT" }
+            ]
+        });
     } catch (err) {
         await t.rollback();
         console.error("Error adding role to person:", err);
-        res.status(500).json({ success: false, message: err.message || "Some error occurred while adding the role to the person." });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || "Some error occurred while adding the role to the person." 
+        });
     }
 };
+
 
 /**
  * Remove a role from a person.
@@ -210,36 +279,77 @@ exports.removeRole = async (req, res) => {
         const { personId } = req.params;
         const { role } = req.body;
 
+        // Validate input
+        if (!role) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Role is required.' 
+            });
+        }
+
         // Ensure role is valid and exists
         const validRole = await Role.findOne({ where: { roleName: role }, transaction: t });
         if (!validRole) {
-            return res.status(400).json({ success: false, message: `Invalid role: ${role}.` });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Role '${role}' not found.`,
+                invalidRole: role
+            });
         }
 
         // Check if person exists
         const person = await Person.findByPk(personId, { transaction: t });
         if (!person) {
-            return res.status(404).json({ success: false, message: 'Person not found.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: `Person with ID '${personId}' not found.`,
+                personId
+            });
         }
 
         // Check if role association exists
         const existingAssociation = await PersonRole.findOne({ where: { personId, roleId: validRole.roleId }, transaction: t });
         if (!existingAssociation) {
-            return res.status(400).json({ success: false, message: 'Role not associated with this person.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: `Role '${role}' is not associated with this person.`,
+                personId,
+                roleId: validRole.roleId
+            });
+        }
+
+        // Check if this is the only role associated with the person
+        const roleCount = await PersonRole.count({ where: { personId }, transaction: t });
+        if (roleCount <= 1) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Cannot remove the only role associated with this person.',
+                personId,
+                roleId: validRole.roleId
+            });
         }
 
         // Remove person-role association
         await PersonRole.destroy({ where: { personId, roleId: validRole.roleId }, transaction: t });
-
         await t.commit();
 
-        res.status(200).json({ success: true, message: 'Role removed from person successfully.' });
+        return res.status(200).json({ 
+            success: true, 
+            message: `Role '${role}' removed from person successfully.`,
+            personId,
+            roleId: validRole.roleId
+        });
     } catch (err) {
         await t.rollback();
         console.error("Error removing role from person:", err);
-        res.status(500).json({ success: false, message: err.message || "Some error occurred while removing the role from the person." });
+        return res.status(500).json({ 
+            success: false, 
+            message: err.message || "Some error occurred while removing the role from the person." 
+        });
     }
 };
+
+
 
 /**
  * Find a person by ID with detailed information.
@@ -414,39 +524,62 @@ exports.updatePerson = async (req, res) => {
  * @returns {Promise<Object>} JSON response with success status and message
  */
 exports.removePerson = async (req, res) => {
+    const t = await db.sequelize.transaction();
     const { personId } = req.params;
     try {
         // Check if the person exists
-        const person = await Person.findByPk(personId);
+        const person = await Person.findByPk(personId, { transaction: t });
         if (!person) {
-            return res.status(404).json({ success: false, message: 'Person not found.' });
+            await t.rollback();
+            return res.status(404).json({ 
+                success: false, 
+                message: `Person with ID ${personId} not found.`,
+                personId
+            });
         }
 
         // Check if the person is associated with any works
-        const associatedWorksCount = await BookAuthor.count({ where: { personId } });
+        const associatedWorksCount = await BookAuthor.count({ where: { personId }, transaction: t });
         if (associatedWorksCount > 0) {
+            await t.rollback();
             return res.status(400).json({
                 success: false,
                 message: 'Cannot delete person with associated works.',
+                personId,
                 links: [{ rel: 'self', href: `/persons/${personId}/works`, method: 'GET' }]
             });
         }
 
         // Check if the person is associated with any book editions
-        const associatedEditionsCount = await BookContributor.count({ where: { personId } });
+        const associatedEditionsCount = await BookContributor.count({ where: { personId }, transaction: t });
         if (associatedEditionsCount > 0) {
+            await t.rollback();
             return res.status(400).json({
                 success: false,
                 message: 'Cannot delete person with associated book editions.',
+                personId,
                 links: [{ rel: 'self', href: `/persons/${personId}/editions`, method: 'GET' }]
             });
         }
 
+        // Delete any associated roles
+        await PersonRole.destroy({ where: { personId }, transaction: t });
+
         // Delete the person
-        await person.destroy();
-        res.status(204).json({ success: true, message: 'Person deleted successfully.' });
+        await person.destroy({ transaction: t });
+        await t.commit();
+        return res.status(200).json({ 
+            success: true, 
+            message: `Person with ID ${personId} deleted successfully.`,
+            personId
+        });
     } catch (error) {
+        await t.rollback();
         console.error("Error deleting person:", error);
-        res.status(500).json({ success: false, message: error.message || "Some error occurred while deleting the person." });
+        return res.status(500).json({ 
+            success: false, 
+            message: error.message || "Some error occurred while deleting the person." 
+        });
     }
 };
+
