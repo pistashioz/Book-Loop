@@ -1055,7 +1055,7 @@ exports.removeWorkById = async (req, res) => {
                 links: [{ rel: 'create-work', href: '/works', method: 'POST' }]
             });
         }
-        
+                
         // Delete the work, which will cascade delete associated book editions
         await Work.destroy({ where: { workId } });
         

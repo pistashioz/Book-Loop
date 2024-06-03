@@ -1,4 +1,4 @@
-const express = require('express');
+/* const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
 const { verifyToken } = require('../middleware/authJwt');
@@ -14,3 +14,4 @@ router.get('/users/scheduled_to_delete', verifyToken, isAdmin, adminController.g
 router.delete('/users/:userId', verifyToken, isAdmin, adminController.deleteUser);
 
 module.exports = router;
+ */
