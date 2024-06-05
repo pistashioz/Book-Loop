@@ -814,8 +814,8 @@ async function fetchProfileSettings(userId) {
             streetName: userProfile.street,
             streetNumber: userProfile.streetNumber,
             postalCode: userProfile.postalCode,
-            locality: userProfile.postalCodeDetails?.locality,
-            country: userProfile.postalCodeDetails?.country
+            locality: userProfile.postalCodeDetails?.locality ? userProfile.postalCodeDetails.locality : null,
+            country: userProfile.postalCodeDetails?.country ? userProfile.postalCodeDetails.country : null
         },
         showCity: userProfile.showCity
     };
