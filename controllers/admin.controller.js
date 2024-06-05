@@ -72,16 +72,25 @@ exports.getUsersForDeletion = async (req, res) => {
 
 exports.getSuspendedUsers = async (req, res) => {
     try {
-        const users = await User.findAll({
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
+        const { count, rows } = await db.User.findAndCountAll({
             where: {
                 isActiveStatus: 'suspended',
             },
-            attributes: ['userId', 'username', 'profileImage', 'isActiveStatus', 'registrationDate']
+            attributes: ['userId', 'username', 'profileImage', 'isActiveStatus', 'registrationDate'],
+            limit,
+            offset
         });
+        const totalUsers = count;
+        const totalPages = Math.ceil(totalUsers / limit);
 
-        console.log(`Suspended users: ${JSON.stringify(users, null, 2)}`);
-
-        res.status(200).json(users);
+        res.status(200).json({
+            data: rows,
+            currentPage: page,
+            totalPages,
+        });
     } catch (error) {
         console.error("Error fetching suspended users:", error);
         res.status(500).json({ message: 'Error fetching suspended users', error: error.message });
