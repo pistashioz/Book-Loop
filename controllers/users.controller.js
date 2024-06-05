@@ -41,6 +41,7 @@ exports.findAll = async (req, res) => {
                 'sellerReviewCount',
                 'isActiveStatus',
                 'registrationDate',
+                'isAdmin',
                 'deletionScheduleDate'
             ],
             order: [

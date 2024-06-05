@@ -74,6 +74,10 @@ router.route('/')
 .get(usersController.findAll)
 .post(usersController.create);
 
+// Get users eligible for deletion
+router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
+router.get('/suspended-users', verifyToken, isAdmin, adminController.getSuspendedUsers)
+
 router.route('/:id')
 .get(usersController.findOne)
 /*     .put(usersController.update)
@@ -86,8 +90,6 @@ router.post('/logout', verifyToken, usersController.logout);
 // Toggle suspension of a user (suspend/unsuspend)
 router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
 
-// Get users eligible for deletion
-router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
 
 // Delete a user
 router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
