@@ -787,7 +787,7 @@ exports.getUserSettings = async (req, res) => {
 
 async function fetchProfileSettings(userId) {
     const userProfile = await db.User.findByPk(userId, {
-        attributes: ['username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
+        attributes: ['userId','username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
             'street','streetNumber', 'postalCode',
          ],
         include: [
@@ -804,6 +804,7 @@ async function fetchProfileSettings(userId) {
     console.log(userProfile);
     // Construct a response object
     return {
+        userId: userProfile.userId,
         username: userProfile.username,
         email: userProfile.email,
         profileImage: userProfile.profileImage,

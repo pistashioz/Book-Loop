@@ -84,13 +84,13 @@ router.post('/logout', verifyToken, usersController.logout);
 
 // Admin routes
 // Toggle suspension of a user (suspend/unsuspend)
-router.patch('/users/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
+router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
 
 // Get users eligible for deletion
-router.get('/users/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
+router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
 
 // Delete a user
-router.delete('/users/:userId', verifyToken, isAdmin, adminController.deleteUser);
+router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
 
 
 
