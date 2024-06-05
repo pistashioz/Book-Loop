@@ -15,23 +15,33 @@ const MAX_SEARCH_ENTRIES = 10;
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
-    const { username = "" } = req.query;
+    const { username = "", status = "all" } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
     try {
+        let whereClause = {
+            username: {
+                [Op.like]: `%${username}%`
+            }
+        };
+
+        if (status !== "all") {
+            whereClause.isActiveStatus = status; // Apply filter based on status
+        }
+
         const { count, rows } = await db.User.findAndCountAll({
-            where: {
-                username: {
-                    [Op.like]: `%${username}%`
-                }
-            },
+            where: whereClause,
             attributes: [
+                'userId',
                 'profileImage',
                 'username',
                 'sellerAverageRating',
-                'sellerReviewCount'
+                'sellerReviewCount',
+                'isActiveStatus',
+                'registrationDate',
+                'deletionScheduleDate'
             ],
             order: [
                 ['username', 'ASC']
