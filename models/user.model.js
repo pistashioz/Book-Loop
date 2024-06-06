@@ -56,18 +56,16 @@ module.exports = (sequelize, DataTypes) => {
             defaultValue: 'active'
         },
         deletionScheduleDate: DataTypes.DATE,
-        street: { type: DataTypes.STRING, validate: { isComplete: validateAddressComplete } },
+        street: { type: DataTypes.STRING },
         streetNumber: {
             type: DataTypes.STRING,
             validate: {
                 isAlphanumeric: { msg: 'Street number must be alphanumeric' },
-                isComplete: validateAddressComplete
             }
         },
         postalCode: {
             type: DataTypes.STRING,
             references: { model: 'postalCode', key: 'postalCode' },
-            validate: { isComplete: validateAddressComplete }
         },
         showCity: { type: DataTypes.BOOLEAN, defaultValue: false },
         deliverByHand: { type: DataTypes.BOOLEAN, defaultValue: false },

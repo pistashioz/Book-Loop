@@ -95,7 +95,6 @@ router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension)
 router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
 
 
-
 // router.get('/validate-session', verifyToken, usersController.validateSession);
 
 // Handle unsupported routes

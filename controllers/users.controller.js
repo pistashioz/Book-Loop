@@ -678,54 +678,77 @@ exports.initiateAccountDeletion = async (req, res) => {
     }
 };
 
-// Update or create a user address and corresponding postal code
+/**
+ * Update or create a user address and corresponding postal code.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.updateUserAddress = async (req, res) => {
-    const userId = req.userId;  // from middleware
+    const userId = req.userId; // from middleware
     const { street, streetNumber, postalCode, locality, country } = req.body;
-    
+
     const t = await db.sequelize.transaction();
-    
+    let postalCodeRecord;
+
+    console.log(street, streetNumber, postalCode, locality, country);
+
     try {
-        // First, check if all address fields are provided or if all are empty
-        const addressFields = [street, streetNumber, postalCode];
-        const allFieldsProvided = addressFields.every(field => field);
-        const noFieldsProvided = addressFields.every(field => !field);
-        
-        if (!allFieldsProvided && !noFieldsProvided) {
+        let errorFields = [];
+
+        // Validate that street and street number are provided together or not at all
+        if ((street !== undefined && streetNumber === undefined) || (street === undefined && streetNumber !== undefined)) {
+            if (street === undefined) errorFields.push('street');
+            if (streetNumber === undefined) errorFields.push('streetNumber');
             await t.rollback();
-            return res.status(400).json({ message: "All address fields must be provided together or none at all." });
+            return res.status(400).json({ message: "Both street and street number must be provided together.", missingFields: errorFields });
         }
-        
-        // Handle updates or creation of address details
+
+        // Validate that postal code, locality, and country are provided together or not at all
+        if ((postalCode !== undefined && (locality === undefined || country === undefined)) ||
+            (postalCode === undefined && (locality !== undefined || country !== undefined))) {
+            if (postalCode === undefined) errorFields.push('postalCode');
+            if (locality === undefined) errorFields.push('locality');
+            if (country === undefined) errorFields.push('country');
+            await t.rollback();
+            return res.status(400).json({ message: "Postal code, locality, and country must be provided together.", missingFields: errorFields });
+        }
+
+        // Find user
         const user = await User.findByPk(userId, { transaction: t });
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found." });
         }
-        
-        if (allFieldsProvided) {
-            // Verify that locality and country are provided when postal code is involved
-            if (!locality || !country) {
-                await t.rollback();
-                return res.status(400).json({ message: "Both locality and country must be provided with postal code." });
-            }
-            
-            // Check for existing postal code or create new one
-            let postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
+
+        // Update street and street number if provided
+        if (street !== undefined && streetNumber !== undefined) {
+            user.street = street;
+            user.streetNumber = streetNumber;
+        } else if (street === undefined && streetNumber === undefined) {
+            console.log('Street and street number are not provided. Setting them to null.');
+            user.street = null;
+            user.streetNumber = null;
+        }
+
+        // Update postal code details if provided
+        if (postalCode !== undefined && locality !== undefined && country !== undefined) {
+            postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
             if (!postalCodeRecord) {
                 postalCodeRecord = await PostalCode.create({ postalCode, locality, country }, { transaction: t });
             } else {
                 await postalCodeRecord.update({ locality, country }, { transaction: t });
             }
-            
-            // Update user's address fields
-            await user.update({ street, streetNumber, postalCode }, { transaction: t });
-        } else {
-            // If no fields are provided and user intends to clear address, reset the fields
-            await user.update({ street: null, streetNumber: null, postalCode: null }, { transaction: t });
+            user.postalCode = postalCode;
+        } else if (postalCode === undefined && locality === undefined && country === undefined) {
+            user.postalCode = null;
         }
-        
+
+        // Commit the transaction and save user details
+        await user.save({ transaction: t });
         await t.commit();
+
         return res.status(200).json({
             message: "User address updated successfully",
             user: {
@@ -736,7 +759,7 @@ exports.updateUserAddress = async (req, res) => {
                 country: postalCodeRecord ? postalCodeRecord.country : null
             }
         });
-        
+
     } catch (error) {
         await t.rollback();
         if (error instanceof ValidationError) {
@@ -749,6 +772,10 @@ exports.updateUserAddress = async (req, res) => {
         return res.status(500).json({ message: "Error updating user address", error: error.message });
     }
 };
+
+
+
+
     
 // Session validation to verify active user sessions
 exports.validateSession = (req, res) => {
@@ -815,9 +842,10 @@ async function fetchProfileSettings(userId) {
     console.log(userProfile);
     // Construct a response object
     return {
-        userId: userProfile.userId,
+/*         
         username: userProfile.username,
-        email: userProfile.email,
+        email: userProfile.email, */
+        userId: userProfile.userId,
         profileImage: userProfile.profileImage,
         about: userProfile.about,
         defaultLanguage: userProfile.defaultLanguage,
