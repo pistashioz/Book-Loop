@@ -62,11 +62,10 @@ exports.issueAccessToken = (userId, sessionId) => {
             expiresIn: expirationSeconds
         });
         
-        const cookieExpires = dayjs().add(5, 'minutes').toDate();
+        const cookieExpires = dayjs().add(expirationMins + 5, 'minutes').toDate();
         
         return { 
             token, 
-            expires: dayjs().add(expirationMins, 'minutes').toDate(), 
             cookieExpires 
         };
     } catch (error) {
@@ -87,7 +86,8 @@ exports.handleRefreshToken = (userId, sessionId) => {
             expiresIn: expirationSeconds
         });
         
-        const cookieExpires = dayjs().add(expirationHours, 'hours').toDate();
+        // Set cookie expiration to 1 hour and 5 minutes (1 hour for the token + 5 additional minutes)
+        const cookieExpires = dayjs().add(expirationHours, 'hours').add(5, 'minutes').toDate();
         
         return { 
             refreshToken, 

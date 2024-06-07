@@ -467,11 +467,14 @@ exports.login = async (req, res) => {
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
         
-        const { token: accessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
+        const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
         
         createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
         
+        console.log(`access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
+        console.log(`refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
+
         setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
         
         // Reactivate the account if requested
