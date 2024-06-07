@@ -70,7 +70,6 @@ module.exports = (sequelize, DataTypes) => {
         showCity: { type: DataTypes.BOOLEAN, defaultValue: false },
         deliverByHand: { type: DataTypes.BOOLEAN, defaultValue: false },
         about: DataTypes.TEXT,
-        averageRating: { type: DataTypes.DECIMAL(3, 2), validate: { min: 0, max: 5 } },
         defaultLanguage: {
             type: DataTypes.ENUM('EN', 'PT-EU'),
             defaultValue: 'EN',

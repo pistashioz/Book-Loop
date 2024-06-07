@@ -62,7 +62,7 @@ exports.issueAccessToken = (userId, sessionId) => {
             expiresIn: expirationSeconds
         });
         
-        const cookieExpires = dayjs().add(25, 'minutes').toDate();
+        const cookieExpires = dayjs().add(5, 'minutes').toDate();
         
         return { 
             token, 
