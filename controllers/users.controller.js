@@ -1092,13 +1092,9 @@ async function updateProfileSettings(userId, body) {
 }
 
 // Update user account settings
-async function updateAccountSettings(userId, body, res) {
+async function updateAccountSettings(userId, body) {
     const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
-
-    // Validate presence of password fields
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        return { status: 400, data: { message: "All password fields must be provided." } };
-    }
+    console.log('updateAccountSettings', body);
 
     let transaction;
 
@@ -1111,56 +1107,66 @@ async function updateAccountSettings(userId, body, res) {
             return { status: 404, data: { message: "User not found." } };
         }
 
-        // Validate current password
-        if (!(await user.validPassword(currentPassword))) {
-            await transaction.rollback();
-            return { status: 401, data: { message: "Invalid current password." } };
-        }
-        
-        // Validate new password confirmation
-        if (newPassword !== confirmPassword) {
-            await transaction.rollback();
-            return { status: 400, data: { message: "New passwords do not match." } };
-        }
+        // Check if the update includes password changes
+        if (currentPassword || newPassword || confirmPassword) {
+            // Validate presence of password fields
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                await transaction.rollback();
+                return { status: 400, data: { message: "All password fields must be provided." } };
+            }
 
-        // Update the user's password and mark as changed
-        user.password = newPassword;
-        user.changed('password', true);
+            // Validate current password
+            if (!(await user.validPassword(currentPassword))) {
+                await transaction.rollback();
+                return { status: 401, data: { message: "Invalid current password." } };
+            }
+
+            // Validate new password confirmation
+            if (newPassword !== confirmPassword) {
+                await transaction.rollback();
+                return { status: 400, data: { message: "New passwords do not match." } };
+            }
+
+            // Update the user's password and mark as changed
+            user.password = newPassword;
+            user.changed('password', true);
+
+            // Invalidate all sessions due to password change
+            await logoutUserSessions(userId, transaction);
+        }
 
         let isEmailChanged = email && email !== user.email;
         const updateData = {
             email: email || user.email,
             username: username || user.username,
-            name: name || user.name,
+            name: name !== undefined ? name : user.name,
             birthDate: birthdayDate || user.birthDate,
             holidayMode: holidayMode !== undefined ? holidayMode : user.holidayMode,
             isVerified: !isEmailChanged ? user.isVerified : false
         };
 
-        // Save changes
-        await user.save({ transaction });
+        // Update user details
+        await user.update(updateData, { transaction });
 
-        if (newPassword) {
-            // Invalidate all sessions due to password change
-            await logoutUserSessions(userId, transaction);
-            res.clearCookie('accessToken');
-            res.clearCookie('refreshToken');
-        }
-
+        // Send verification email if email changed
         if (isEmailChanged) {
             sendVerificationEmail(user.email);
         }
 
         await transaction.commit();
+
         return {
-            message: "User account updated successfully",
-            user: {
-                email: user.email,
-                username: user.username,
-                name: user.name,
-                birthdayDate: user.birthDate,
-                holidayMode: user.holidayMode,
-                isVerified: user.isVerified
+            status: 200,
+            data: {
+                message: "User account updated successfully",
+                user: {
+                    email: user.email,
+                    username: user.username,
+                    name: user.name,
+                    birthDate: user.birthDate,
+                    holidayMode: user.holidayMode,
+                    isVerified: user.isVerified
+                }
             }
         };
     } catch (error) {
@@ -1169,6 +1175,7 @@ async function updateAccountSettings(userId, body, res) {
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
+
 
 // Logout from all sessions globally
 async function logoutUserSessions(userId, transaction) {
@@ -1213,9 +1220,12 @@ async function updateNotificationSettings(userId, settings) {
     let transaction;
     try {
         transaction = await db.sequelize.transaction();
-
+        // console.log(settings);
         // Iterate over the settings provided in the request body
         for (const [configKey, configValue] of Object.entries(settings)) {
+
+         console.log(configKey);
+            console.log(configValue);
             // First, fetch the corresponding configuration ID
             const config = await Configuration.findOne({
                 where: {
@@ -1274,7 +1284,6 @@ async function updatePrivacySettings(userId, settings) {
 
             console.log(`Update result for ${configKey}:`, result);
         }
-
         await transaction.commit();
         return { message: "Privacy settings updated successfully" };
     } catch (error) {
