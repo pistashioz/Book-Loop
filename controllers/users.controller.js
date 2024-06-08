@@ -1220,14 +1220,20 @@ async function updateNotificationSettings(userId, settings) {
     let transaction;
     try {
         transaction = await db.sequelize.transaction();
-        // console.log(settings);
-        // Iterate over the settings provided in the request body
-        for (const [configKey, configValue] of Object.entries(settings)) {
+        console.log(settings);
 
-         console.log(configKey);
-            console.log(configValue);
+        // Extract the notifications object from settings
+        const notificationSettings = settings.notifications;
+        if (!notificationSettings) {
+            throw new Error("Notification settings not provided");
+        }
+
+        for (const [configKey, configValue] of Object.entries(notificationSettings)) {
+            console.log(typeof configKey); // Should be string
+            console.log(configValue); // Should be the value of the configKey
+
             // First, fetch the corresponding configuration ID
-            const config = await Configuration.findOne({
+            const config = await db.Configuration.findOne({
                 where: {
                     configKey: configKey,
                     configType: 'notifications'
@@ -1239,16 +1245,39 @@ async function updateNotificationSettings(userId, settings) {
                 throw new Error(`Invalid config key: ${configKey}`);
             }
 
-            // Update the user's configuration value
-            await UserConfiguration.update({
-                configValue: configValue
-            }, {
+            // Convert the configValue to a string
+            const configValueStr = String(configValue);
+
+            // Check if the user configuration entry exists
+            const userConfig = await db.UserConfiguration.findOne({
                 where: {
                     userId: userId,
                     configId: config.configId
                 },
                 transaction: transaction
             });
+
+            if (userConfig) {
+                // Update the existing user configuration entry
+                await db.UserConfiguration.update({
+                    configValue: configValueStr
+                }, {
+                    where: {
+                        userId: userId,
+                        configId: config.configId
+                    },
+                    transaction: transaction
+                });
+            } else {
+                // Insert a new user configuration entry
+                await db.UserConfiguration.create({
+                    userId: userId,
+                    configId: config.configId,
+                    configValue: configValueStr
+                }, {
+                    transaction: transaction
+                });
+            }
         }
 
         await transaction.commit();
@@ -1266,32 +1295,78 @@ async function updatePrivacySettings(userId, settings) {
     let transaction;
     try {
         transaction = await db.sequelize.transaction();
+        console.log(settings);
 
-        for (const [configKey, configValue] of Object.entries(settings)) {
+        // Extract the privacy object from settings
+        const privacySettings = settings.privacy;
+        if (!privacySettings) {
+            throw new Error("Privacy settings not provided");
+        }
+
+        for (const [configKey, configValue] of Object.entries(privacySettings)) {
+            console.log(typeof configKey); // Should be string
+            console.log(configValue); // Should be the value of the configKey
+
+            // First, fetch the corresponding configuration ID
             const config = await db.Configuration.findOne({
-                where: { configKey, configType: 'privacy' }
+                where: {
+                    configKey: configKey,
+                    configType: 'privacy'
+                }
             });
 
+            // Throw an error if the configuration key is invalid (does not exist in the database)
             if (!config) {
                 throw new Error(`Invalid config key: ${configKey}`);
             }
 
-            const result = await db.UserConfiguration.upsert({
-                userId: userId,
-                configId: config.configId,
-                configValue: configValue
-            }, { transaction: transaction });
+            // Convert the configValue to a string
+            const configValueStr = String(configValue);
 
-            console.log(`Update result for ${configKey}:`, result);
+            // Check if the user configuration entry exists
+            const userConfig = await db.UserConfiguration.findOne({
+                where: {
+                    userId: userId,
+                    configId: config.configId
+                },
+                transaction: transaction
+            });
+
+            if (userConfig) {
+                // Update the existing user configuration entry
+                await db.UserConfiguration.update({
+                    configValue: configValueStr
+                }, {
+                    where: {
+                        userId: userId,
+                        configId: config.configId
+                    },
+                    transaction: transaction
+                });
+            } else {
+                // Insert a new user configuration entry
+                await db.UserConfiguration.create({
+                    userId: userId,
+                    configId: config.configId,
+                    configValue: configValueStr
+                }, {
+                    transaction: transaction
+                });
+            }
         }
+
         await transaction.commit();
         return { message: "Privacy settings updated successfully" };
     } catch (error) {
+        // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating privacy settings", error);
-        return { message: "Failed to update privacy settings", error: error.message || error.toString() };
+        throw new Error("Failed to update privacy settings");
     }
 }
+
+
+
 
 // Follow another user
 exports.followUser = async (req, res) => {
@@ -1775,6 +1850,7 @@ exports.deleteEntries = async (req, res) => {
 
 // Get user's favorite genres
 exports.getFavoriteGenres = async (req, res) => {
+    console.log("Fetching favorite genres for user", req.userId);
     try {
         const userId = req.userId;
         const favoriteGenres = await UserFavoriteGenre.findAll({
@@ -1843,6 +1919,7 @@ exports.removeFavoriteGenre = async (req, res) => {
 
 // Get user's favorite authors
 exports.getFavoriteAuthors = async (req, res) => {
+    console.log('Fetching favorite authors for user', req.userId);
     try {
         const userId = req.userId;
         const favoriteAuthors = await UserFavoriteAuthor.findAll({
