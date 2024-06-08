@@ -1869,32 +1869,33 @@ exports.addFavoriteGenre = async (req, res) => {
     try {
         const userId = req.userId;
         const { genreName } = req.body;
-
+        console.log("Adding favorite genre", genreName);
         // Check if the genre exists
         const genre = await Genre.findOne({ where: { genreName } });
         if (!genre) {
-            return res.status(404).json({ message: 'Genre not found' });
+            return res.status(404).json({ success: false,  message: 'Genre not found' });
         }
 
         // Check if the user already has 5 favorite genres
         const favoriteCount = await UserFavoriteGenre.count({ where: { userId } });
         if (favoriteCount >= 5) {
-            return res.status(400).json({ message: 'You can only have up to 5 favorite genres' });
+            return res.status(400).json({  success: false, message: 'You can only have up to 5 favorite genres' });
         }
 
         // Check if the genre is already a favorite
         const existingFavorite = await UserFavoriteGenre.findOne({ where: { userId, genreId: genre.genreId } });
         if (existingFavorite) {
-            return res.status(400).json({ message: 'Genre is already a favorite' });
+            return res.status(400).json({ success: false, message: 'Genre is already a favorite' });
         }
 
         const favoriteGenre = await UserFavoriteGenre.create({ userId, genreId: genre.genreId });
-        res.status(201).json({ message: `Genre '${genreName}' added to favorites` });
+        res.status(201).json({  success: true , message: `Genre '${genreName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite genre:", error);
-        res.status(500).json({ message: 'Error adding favorite genre', error: error.message });
+        res.status(500).json({  success: false, message: 'Error adding favorite genre', error: error.message });
     }
 };
+
 
 // Remove a favorite genre
 exports.removeFavoriteGenre = async (req, res) => {
@@ -1907,15 +1908,16 @@ exports.removeFavoriteGenre = async (req, res) => {
         });
 
         if (!favoriteGenre) {
-            return res.status(404).json({ message: 'Favorite genre not found' });
+            return res.status(404).json({  success: false, message: 'Favorite genre not found' });
         }
 
-        res.status(200).json({ message: 'Favorite genre removed successfully' });
+        res.status(200).json({ success: true, message: 'Favorite genre removed successfully' });
     } catch (error) {
         console.error("Error removing favorite genre:", error);
-        res.status(500).json({ message: 'Error removing favorite genre', error: error.message });
+        res.status(500).json({  success: false, message: 'Error removing favorite genre', error: error.message });
     }
 };
+
 
 // Get user's favorite authors
 exports.getFavoriteAuthors = async (req, res) => {

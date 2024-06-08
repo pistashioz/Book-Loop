@@ -223,7 +223,10 @@ exports.findGenres = async (req, res) => {
         const page = parseInt(req.query.page, 10) || 1;
         const limit = 4; // Fixed limit of 4 genres per page
         const offset = (page - 1) * limit;
-        const { genreNames, language, filterPage = 1, filterLimit = 10, simple } = req.query;
+        const { genreNames, language, simple } = req.query;
+
+        const filterPage = parseInt(req.query.filterPage, 10) || 1;
+        const filterLimit = parseInt(req.query.filterLimit, 10) || 10;
 
         let genreWhere = {};
         let genreNameArray = [];
@@ -265,9 +268,12 @@ exports.findGenres = async (req, res) => {
             }
         }
 
+        console.log(req.query);
+        console.log(filterPage)
+        console.log(filterLimit)
         // Fetch all genres with works for filters, with pagination
-        const filterOffset = (parseInt(filterPage, 10) - 1) * parseInt(filterLimit, 10);
-
+        const filterOffset = (Number(filterPage, 10) - 1) * Number(filterLimit, 10);
+        console.log(filterOffset)
         if (simple) {
             const genresSimple = await Genre.findAll({
                 where: genreWhere,
