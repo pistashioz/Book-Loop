@@ -13,8 +13,11 @@ const { verifyTokenHelper } = require('../utils/jwtHelpers');
  */
 exports.verifyToken = async (req, res, next) => {
     const token = req.cookies.accessToken;
-
+    console.log(req.cookies.accessToken)
+    console.log('Verifying access token...');
+    console.log(`Received token: ${token}`);
     if (!token) {
+        console.log('No access token found.');
         return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
     }
 

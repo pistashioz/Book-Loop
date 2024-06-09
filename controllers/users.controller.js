@@ -7,7 +7,7 @@ const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person   } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person, Role, PersonRole   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 const MAX_ENTRIES_PER_TYPE = 30;
@@ -842,7 +842,7 @@ async function fetchProfileSettings(userId) {
     if (!userProfile) {
         throw new Error('User not found');
     }
-    console.log(userProfile);
+
     // Construct a response object
     return {
 /*         
@@ -1926,6 +1926,7 @@ exports.getFavoriteAuthors = async (req, res) => {
         const userId = req.userId;
         const favoriteAuthors = await UserFavoriteAuthor.findAll({
             where: { userId },
+            attributes: [],
             include: [{ model: Person, attributes: ['personId', 'personName'] }]
         });
         res.status(200).json(favoriteAuthors);
@@ -1935,14 +1936,32 @@ exports.getFavoriteAuthors = async (req, res) => {
     }
 };
 
-// Add a favorite author
+
+/**
+ * Add a favorite author for a user.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.addFavoriteAuthor = async (req, res) => {
     try {
         const userId = req.userId;
         const { personName } = req.body;
 
-        // Check if the person exists and is an author
-        const person = await Person.findOne({ where: { personName, roles: { [Op.like]: '%author%' } } });
+        // Check if the person exists and has the 'author' role
+        const person = await Person.findOne({
+            where: { personName },
+            include: {
+                model: PersonRole,
+                attributes: [],
+                include: {
+                    model: Role,
+                    where: { roleName: 'author' }
+                },
+            }
+        });
+
         if (!person) {
             return res.status(404).json({ message: 'Author not found' });
         }
@@ -1959,31 +1978,39 @@ exports.addFavoriteAuthor = async (req, res) => {
             return res.status(400).json({ message: 'Author is already a favorite' });
         }
 
-        const favoriteAuthor = await UserFavoriteAuthor.create({ userId, personId: person.personId });
-        res.status(201).json({ message: `Author '${personName}' added to favorites` });
+        // Add the author to the user's favorites
+        await UserFavoriteAuthor.create({ userId, personId: person.personId });
+        res.status(201).json({ success: true, message: `Author '${personName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite author:", error);
         res.status(500).json({ message: 'Error adding favorite author', error: error.message });
     }
 };
 
-// Remove a favorite author
+/**
+ * Remove a favorite author for a user.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.removeFavoriteAuthor = async (req, res) => {
     try {
         const userId = req.userId;
         const { personId } = req.params;
 
-        const favoriteAuthor = await UserFavoriteAuthor.destroy({
-            where: { userId, personId }
-        });
-
+        // Check if the favorite author entry exists
+        const favoriteAuthor = await UserFavoriteAuthor.findOne({ where: { userId, personId } });
         if (!favoriteAuthor) {
             return res.status(404).json({ message: 'Favorite author not found' });
         }
 
+        // Remove the favorite author entry
+        await UserFavoriteAuthor.destroy({ where: { userId, personId } });
         res.status(200).json({ message: 'Favorite author removed successfully' });
     } catch (error) {
         console.error("Error removing favorite author:", error);
         res.status(500).json({ message: 'Error removing favorite author', error: error.message });
     }
 };
+
