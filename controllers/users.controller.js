@@ -1024,30 +1024,28 @@ exports.updateUserSettings = async (req, res) => {
     const type = req.query.type;
     
     try {
+        let updateResult;
         switch (type) {
             case 'profile':
-                const profileUpdateData = await updateProfileSettings(userId, req.body);
-                res.status(200).json(profileUpdateData);
+                updateResult = await updateProfileSettings(userId, req.body);
                 break;
             case 'account':
-                const accountUpdateData = await updateAccountSettings(userId, req.body, res);
-                res.status(200).json(accountUpdateData);
+                updateResult = await updateAccountSettings(userId, req.body);
                 break;
             case 'notifications':
-                const notificationsUpdateData = await updateNotificationSettings(userId, req.body);
-                res.status(200).json(notificationsUpdateData);
+                updateResult = await updateNotificationSettings(userId, req.body);
                 break;
             case 'privacy':
-                const privacyUpdateData = await updatePrivacySettings(userId, req.body);
-                res.status(200).json(privacyUpdateData);
+                updateResult = await updatePrivacySettings(userId, req.body);
                 break;
             default:
-                res.status(400).json({ message: "Invalid settings type specified" });
-                break;
+                return res.status(400).json({ message: "Invalid settings type specified" });
         }
+
+        return res.status(updateResult.status).json(updateResult.data);
     } catch (error) {
         console.error('Error updating user settings', error);
-        res.status(500).json({ message: "Error updating settings", error: error.message });
+        return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
 };
 
@@ -1091,6 +1089,7 @@ async function updateProfileSettings(userId, body) {
     }
 }
 
+
 // Update user account settings
 async function updateAccountSettings(userId, body) {
     const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
@@ -1107,46 +1106,63 @@ async function updateAccountSettings(userId, body) {
             return { status: 404, data: { message: "User not found." } };
         }
 
+        // Collect validation errors
+        const validationErrors = [];
+        
+        if (!email) {
+            validationErrors.push({ message: "Email cannot be null or empty!", field: 'email' });
+        }
+        if (!username) {
+            validationErrors.push({ message: "Username cannot be null or empty!", field: 'username' });
+        }
+        if (!birthdayDate) {
+            validationErrors.push({ message: "Birth date cannot be null or empty!", field: 'birthDate' });
+        }
+
+        if (validationErrors.length > 0) {
+            return { status: 400, data: { message: "Validation errors occurred.", errors: validationErrors } };
+        }
+
         // Check if the update includes password changes
         if (currentPassword || newPassword || confirmPassword) {
             // Validate presence of password fields
             if (!currentPassword || !newPassword || !confirmPassword) {
                 await transaction.rollback();
-                return { status: 400, data: { message: "All password fields must be provided." } };
+                return { status: 400, data: { message: "All password fields must be provided.", errors: [{ message: "All password fields must be provided.", field: 'password' }] } };
             }
 
             // Validate current password
             if (!(await user.validPassword(currentPassword))) {
                 await transaction.rollback();
-                return { status: 401, data: { message: "Invalid current password." } };
+                return { status: 401, data: { message: "Invalid current password.", errors: [{ message: "Invalid current password.", field: 'currentPassword' }] } };
             }
 
             // Validate new password confirmation
             if (newPassword !== confirmPassword) {
                 await transaction.rollback();
-                return { status: 400, data: { message: "New passwords do not match." } };
+                return { status: 400, data: { message: "New passwords do not match.", errors: [{ message: "New passwords do not match.", field: 'newPassword' }] } };
             }
 
             // Update the user's password and mark as changed
             user.password = newPassword;
             user.changed('password', true);
-
+            
             // Invalidate all sessions due to password change
             await logoutUserSessions(userId, transaction);
         }
 
         let isEmailChanged = email && email !== user.email;
         const updateData = {
-            email: email || user.email,
-            username: username || user.username,
-            name: name !== undefined ? name : user.name,
-            birthDate: birthdayDate || user.birthDate,
-            holidayMode: holidayMode !== undefined ? holidayMode : user.holidayMode,
+            email,
+            username,
+            name,
+            birthDate: birthdayDate,
+            holidayMode,
             isVerified: !isEmailChanged ? user.isVerified : false
         };
 
-        // Update user details
-        await user.update(updateData, { transaction });
+        // Update user details with validation
+        await user.update(updateData, { transaction, validate: true });
 
         // Send verification email if email changed
         if (isEmailChanged) {
@@ -1172,9 +1188,14 @@ async function updateAccountSettings(userId, body) {
     } catch (error) {
         if (transaction) await transaction.rollback();
         console.error("Error during the transaction:", error);
+        if (error instanceof ValidationError) {
+            return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => ({ message: e.message, field: e.path })) } };
+        }
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
+
+
 
 
 // Logout from all sessions globally

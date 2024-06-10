@@ -22,15 +22,13 @@ module.exports = (sequelize, DataTypes) => {
         username: {
             type: DataTypes.STRING,
             allowNull: false,
-            validate: { notNull: { msg: 'Username cannot be null or empty!' } }
         },
         profileImage: DataTypes.STRING(1000),
         email: {
             type: DataTypes.STRING,
             allowNull: false,
             validate: {
-                isEmail: { msg: 'Must be a valid email address' },
-                notNull: { msg: 'Email cannot be null or empty!' }
+                isEmail: { msg: 'Must be a valid email address' }
             }
         },
         isVerified: { type: DataTypes.BOOLEAN, defaultValue: false },
