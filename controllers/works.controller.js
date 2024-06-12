@@ -36,7 +36,7 @@ exports.findAll = async (req, res) => {
         // Extract query parameters
         const { 
             page = 1, 
-            limit = 10, 
+            limit = 11, 
             genres, 
             authors, 
             startDate, 
