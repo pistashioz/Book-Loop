@@ -146,47 +146,47 @@ exports.findOne = async (req, res) => {
 async function fetchListings(sellerUserId, currentUserId, page = 1, limit = 8) {
     const offset = (page - 1) * limit;
     const { count, rows } = await db.Listing.findAndCountAll({
-        where: { sellerUserId: sellerUserId },
-        attributes: [
-            'listingId',
-            'listingTitle',
-            'price',
-            'listingCondition',
-            [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
-            [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId})`), 'isLiked']
-        ],
-        include: [
-            {
-                model: db.BookEdition,
-                attributes: ['title', 'UUID'],
-                include: {
-                    model: db.Work,
-                    as: 'PrimaryWork',
-                    attributes: ['workId']
-                }
-            },
-            {
-                model: db.ListingImage,
-                attributes: ['imageUrl'],
-                limit: 1
-            },
-        ],
-        group: ['Listing.listingId'],
-        limit,
-        offset,
-        subQuery: false,
-        order: [['listingId', 'ASC']]
+      where: { sellerUserId: sellerUserId },
+      attributes: [
+        'listingId',
+        'listingTitle',
+        'price',
+        'listingCondition',
+        [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
+        [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId || 0})`), 'isLiked']
+      ],
+      include: [
+        {
+          model: db.BookEdition,
+          attributes: ['title', 'UUID'],
+          include: {
+            model: db.Work,
+            as: 'PrimaryWork',
+            attributes: ['workId']
+          }
+        },
+        {
+          model: db.ListingImage,
+          attributes: ['imageUrl'],
+          limit: 1
+        },
+      ],
+      group: ['Listing.listingId'],
+      limit,
+      offset,
+      subQuery: false,
+      order: [['listingId', 'ASC']]
     });
-
+  
     const totalCount = count.reduce((total, item) => total + item.count, 0);
-
+  
     return {
-        count: totalCount,
-        rows,
-        totalPages: Math.ceil(totalCount / limit)
+      count: totalCount,
+      rows,
+      totalPages: Math.ceil(totalCount / limit)
     };
-}
-
+  }
+  
 
 /**
  * Fetches feedback (purchase reviews) for a given seller with pagination.
@@ -1536,7 +1536,7 @@ exports.listFollowers = async (req, res) => {
             }
         });
 
-        res.status(200).json(followers);
+        res.status(200).json({followers, privacy});
     } catch (error) {
         res.status(500).json({ message: 'Error retrieving followers list', error: error.message });
     }
