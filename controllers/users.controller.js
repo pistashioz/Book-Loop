@@ -107,7 +107,7 @@ exports.findOne = async (req, res) => {
 
         const isCurrentUser = req.userId === user.userId;
         let isFollowing = false;
-        if (!isCurrentUser) {
+        if (!isCurrentUser && req.userId) {
             const followRelationship = await db.FollowRelationship.findOne({
                 where: {
                     mainUserId: req.userId,
@@ -115,6 +115,8 @@ exports.findOne = async (req, res) => {
                 }
             });
             isFollowing = !!followRelationship;
+        } else {
+            isFollowing = false;
         }
 
         const responseData = {
