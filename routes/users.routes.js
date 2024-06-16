@@ -37,8 +37,8 @@ router.post('/me/follow', verifyToken, usersController.followUser);
 router.post('/me/block', verifyToken, usersController.blockUser);
 
 // Getting list of followers and followings
-router.get('/:id/following', usersController.listFollowing);
-router.get('/:id/followers', usersController.listFollowers);
+router.get('/:id/following', extractUserId, usersController.listFollowing);
+router.get('/:id/followers', extractUserId, usersController.listFollowers);
 
 // Unfollowing and unblocking
 router.delete('/me/following/:followedUserId', verifyToken, usersController.unfollowUser);

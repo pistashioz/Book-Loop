@@ -1480,43 +1480,75 @@ exports.removeFollower = async (req, res) => {
     }
 };
 
+
 // Lists the users that the specified user is following.
 exports.listFollowing = async (req, res) => {
     const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const userId = req.userId; // Assuming this is set by your middleware
+
+    console.log('Listing following for user ' + id);
+    console.log('userId', userId);
 
     try {
-        // Fetch the user's privacy setting for their following list
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 14 },
             attributes: ['configValue']
         });
 
-        // If the user's following list is private, return an error
-        if (!privacy || privacy.configValue!== 'true') {
+        if (!privacy || privacy.configValue !== 'true') {
             return res.status(403).json({ message: "The user's following list is private." });
         }
 
-        // Fetch the users that the specified user is following
-        const following = await db.FollowRelationship.findAll({
+        const offset = (page - 1) * parseInt(limit);
+
+        console.log('Executing following query');
+        const following = await db.FollowRelationship.findAndCountAll({
             where: { mainUserId: id },
             include: {
                 model: db.User,
                 as: 'FollowedUser',
                 attributes: ['userId', 'username', 'profileImage']
-            }
+            },
+            limit: parseInt(limit), // Ensure limit is an integer
+            offset: parseInt(offset), // Ensure offset is an integer
+            logging: console.log // This will log the generated SQL query
         });
 
-        // Return the list of users the specified user is following
-        res.status(200).json(following);
+        console.log('Following query result:', following);
+
+        // Check follow relationships and order the result
+        const rows = await Promise.all(following.rows.map(async (relationship) => {
+            const isFollowing = await db.FollowRelationship.findOne({
+                where: { mainUserId: userId, followedUserId: relationship.FollowedUser.userId }
+            });
+            return {
+                ...relationship.dataValues,
+                isFollowing: !!isFollowing,
+                isCurrentUser: relationship.FollowedUser.userId === userId
+            };
+        }));
+
+        res.status(200).json({
+            count: following.count,
+            rows: rows
+        });
     } catch (error) {
-        // If there is an issue retrieving the following list, return an error
+        console.error('Error retrieving following list:', error);
         res.status(500).json({ message: 'Error retrieving following list', error: error.message });
     }
 };
 
+
+// Lists the users that are following the specified user.
 exports.listFollowers = async (req, res) => {
     const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const userId = req.userId; // Assuming this is set by your middleware
 
+    console.log('Listing followers for user ' + id);
+    console.log('userId', userId);
+    
     try {
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 15 },
@@ -1527,20 +1559,45 @@ exports.listFollowers = async (req, res) => {
             return res.status(403).json({ message: "The user's followers list is private." });
         }
 
-        const followers = await db.FollowRelationship.findAll({
+        const offset = (page - 1) * limit;
+
+        console.log('Executing followers query');
+        const followers = await db.FollowRelationship.findAndCountAll({
             where: { followedUserId: id },
             include: {
                 model: db.User,
                 as: 'MainUser',
                 attributes: ['userId', 'username', 'profileImage']
-            }
+            },
+            limit: parseInt(limit), // Ensure limit is an integer
+            offset: parseInt(offset), // Ensure offset is an integer
+            logging: console.log // This will log the generated SQL query
         });
 
-        res.status(200).json({followers, privacy});
+        console.log('Followers query result:', followers);
+
+        // Check follow relationships and order the result
+        const rows = await Promise.all(followers.rows.map(async (relationship) => {
+            const isFollowing = await db.FollowRelationship.findOne({
+                where: { mainUserId: userId, followedUserId: relationship.MainUser.userId }
+            });
+            return {
+                ...relationship.dataValues,
+                isFollowing: !!isFollowing,
+                isCurrentUser: relationship.MainUser.userId === userId
+            };
+        }));
+
+        res.status(200).json({
+            count: followers.count,
+            rows: rows
+        });
     } catch (error) {
+        console.error('Error retrieving followers list:', error);
         res.status(500).json({ message: 'Error retrieving followers list', error: error.message });
     }
 };
+
 
 // Block another user
 exports.blockUser = async (req, res) => {

@@ -25,9 +25,10 @@ const extractUserId = async (req, res, next) => {
         }
     } catch (err) {
         if (err.name === 'TokenExpiredError') {
-            res.clearCookie('accessToken');
+/*             res.clearCookie('accessToken');
             res.clearCookie('refreshToken');
-            return res.status(401).json({ message: 'Token has expired. Please log in again.' });
+            return res.status(401).json({ message: 'Token has expired. Please log in again.' }); */
+            return next(); // No token, proceed without setting userId
         } else if (err.name === 'JsonWebTokenError') {
             return res.status(401).json({ message: 'Invalid token. Please log in again.' });
         } else {
