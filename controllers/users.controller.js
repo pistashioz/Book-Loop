@@ -105,14 +105,27 @@ exports.findOne = async (req, res) => {
             return res.status(404).send({ message: "User not found." });
         }
 
+        const isCurrentUser = req.userId === user.userId;
+        let isFollowing = false;
+        if (!isCurrentUser) {
+            const followRelationship = await db.FollowRelationship.findOne({
+                where: {
+                    mainUserId: req.userId,
+                    followedUserId: user.userId
+                }
+            });
+            isFollowing = !!followRelationship;
+        }
+
         const responseData = {
             ...user.dataValues,
             followingCount: user.totalFollowing || 0,
-            followersCount: user.totalFollowers || 0
+            followersCount: user.totalFollowers || 0,
+            isCurrentUser,
+            isFollowing 
         };
-
         if (!tab || tab === 'listings') {
-            responseData.listings = await fetchListings(id);
+            responseData.listings = await fetchListings(id, req.userId);
         }
         if (tab === 'feedback') {
             responseData.feedback = await fetchFeedback(id);
@@ -128,15 +141,7 @@ exports.findOne = async (req, res) => {
     }
 };
 
-
-/**
- * Fetches listings for a given seller user with pagination, adjusting for grouped count.
- * @param {number} sellerUserId - The ID of the user whose listings to fetch.
- * @param {number} [page=1] - The page number of the listings to fetch.
- * @param {number} [limit=10] - The number of listings to fetch per page.
- * @returns {Object} An object containing the total count of listings, the listings themselves, and the total number of pages.
- */
-async function fetchListings(sellerUserId, page = 1, limit = 10) {
+async function fetchListings(sellerUserId, currentUserId, page = 1, limit = 8) {
     const offset = (page - 1) * limit;
     const { count, rows } = await db.Listing.findAndCountAll({
         where: { sellerUserId: sellerUserId },
@@ -146,11 +151,17 @@ async function fetchListings(sellerUserId, page = 1, limit = 10) {
             'price',
             'listingCondition',
             [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
+            [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId})`), 'isLiked']
         ],
         include: [
             {
                 model: db.BookEdition,
-                attributes: ['title']
+                attributes: ['title', 'UUID'],
+                include: {
+                    model: db.Work,
+                    as: 'PrimaryWork',
+                    attributes: ['workId']
+                }
             },
             {
                 model: db.ListingImage,
@@ -162,10 +173,9 @@ async function fetchListings(sellerUserId, page = 1, limit = 10) {
         limit,
         offset,
         subQuery: false,
-        order: [['listingId', 'ASC']] // Sorting by listing ID for consistency
+        order: [['listingId', 'ASC']]
     });
 
-    // Calculate the total count from grouped results
     const totalCount = count.reduce((total, item) => total + item.count, 0);
 
     return {
@@ -1051,6 +1061,7 @@ exports.updateUserSettings = async (req, res) => {
 
 async function updateProfileSettings(userId, body) {
     const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
+    console.log(body)
     const t = await db.sequelize.transaction();
 
     try {
@@ -1391,9 +1402,10 @@ async function updatePrivacySettings(userId, settings) {
 
 // Follow another user
 exports.followUser = async (req, res) => {
+
     const { targetUserId } = req.body;
     const userId = req.userId;
-
+    console.log(`following ${targetUserId}`)
     if (userId == targetUserId) {
         return res.status(400).json({ message: "Cannot follow yourself." });
     }
@@ -1404,14 +1416,15 @@ exports.followUser = async (req, res) => {
             return res.status(404).json({ message: "User not found!" });
         }
 
-        const [followRelationship, created] = await db.FollowRelationship.findOrCreate({
+        const [followRelationship, created] = await db.FollowRelationship.findCreateFind({
             where: { mainUserId: userId, followedUserId: targetUserId }
         });
 
+        console.log(followRelationship, created);
         if (!created) {
             return res.status(400).json({ message: "Already following this user." });
         }
-
+      
         res.status(200).json({ message: 'User followed successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error following user', error: error.message });

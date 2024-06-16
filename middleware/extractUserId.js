@@ -5,7 +5,6 @@ const { verifyTokenHelper } = require('../utils/jwtHelpers');
 
 // Middleware to extract user ID and admin status from the token
 const extractUserId = async (req, res, next) => {
-    // Retrieve token from cookies 
     const token = req.cookies?.accessToken;
 
     if (!token) {

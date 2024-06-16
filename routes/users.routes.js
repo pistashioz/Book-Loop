@@ -4,6 +4,7 @@ const usersController = require('../controllers/users.controller');
 const adminController = require('../controllers/admin.controller');
 const { verifyToken } = require('../middleware/authJwt');
 const { isAdmin } = require('../middleware/admin');
+const extractUserId = require('../middleware/extractUserId');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -79,7 +80,7 @@ router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUser
 router.get('/suspended-users', verifyToken, isAdmin, adminController.getSuspendedUsers)
 
 router.route('/:id')
-.get(usersController.findOne)
+.get(extractUserId, usersController.findOne)
 /*     .put(usersController.update)
 .delete(usersController.delete); */
 
