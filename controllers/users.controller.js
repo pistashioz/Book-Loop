@@ -71,7 +71,8 @@ exports.findAll = async (req, res) => {
 exports.findOne = async (req, res) => {
     const { id } = req.params;
     const tab = req.query.tab; 
-
+    console.log(id)
+console.log(tab)
     try {
         const user = await db.User.findByPk(id, {
             attributes: [
@@ -144,17 +145,26 @@ exports.findOne = async (req, res) => {
 };
 
 async function fetchListings(sellerUserId, currentUserId, page = 1, limit = 8) {
-    const offset = (page - 1) * limit;
-    const { count, rows } = await db.Listing.findAndCountAll({
-      where: { sellerUserId: sellerUserId },
-      attributes: [
+    let attributes = [
         'listingId',
         'listingTitle',
         'price',
         'listingCondition',
         [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
-        [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId || 0})`), 'isLiked']
-      ],
+      ]
+    if (currentUserId){
+        attributes = [
+            ...attributes,
+                [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId})`), 'isLiked']
+        ]
+    } else {
+        attributes = attributes
+    }
+
+    const offset = (page - 1) * limit;
+    const { count, rows } = await db.Listing.findAndCountAll({
+      where: { sellerUserId: sellerUserId },
+      attributes: attributes,
       include: [
         {
           model: db.BookEdition,
@@ -237,16 +247,16 @@ async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
             'literaryRating',
             'creationDate',
             'totalLikes',
-            [db.sequelize.literal(`(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'commentCount']
+            'totalComments',
         ],
         include: [{
             model: db.Work,
-            attributes: ['originalTitle'],
+            attributes: ['workId'],
             include: [{
                 model: db.BookEdition,
-                attributes: ['coverImage', 'ISBN', 'title'],
+                attributes: ['coverImage', 'ISBN', 'title', 'UUID'],
                 where: {
-                    title: {[Op.eq]: db.sequelize.col('Work.originalTitle')}
+                    UUID: {[Op.eq]: db.sequelize.col('Work.primaryEditionUUID')}
                 },
                 required: false 
             }]
@@ -262,13 +272,15 @@ async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
         literaryReview: review.literaryReview,
         literaryRating: review.literaryRating,
         creationDate: review.creationDate,
-        likeCount: review.dataValues.likeCount,
-        commentCount: review.dataValues.commentCount,
+        likeCount: review.totalLikes,
+        commentCount: review.totalComments,
         workTitle: review.Work.originalTitle,
         bookEdition: review.Work.BookEditions[0]? {
             coverImage: review.Work.BookEditions[0].coverImage,
+            UUID: review.Work.BookEditions[0].UUID,
             ISBN: review.Work.BookEditions[0].ISBN,
-            title: review.Work.BookEditions[0].title
+            title: review.Work.BookEditions[0].title,
+            workId: review.Work.workId
         } : null
     }));
     console.log(count)
