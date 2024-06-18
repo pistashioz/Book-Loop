@@ -1558,22 +1558,25 @@ exports.listFollowing = async (req, res) => {
                 as: 'FollowedUser',
                 attributes: ['userId', 'username', 'profileImage']
             },
-            limit: parseInt(limit), // Ensure limit is an integer
-            offset: parseInt(offset), // Ensure offset is an integer
-            logging: console.log // This will log the generated SQL query
+            limit: parseInt(limit), 
+            offset: parseInt(offset), 
+            logging: console.log 
         });
 
         console.log('Following query result:', following);
 
         // Check follow relationships and order the result
         const rows = await Promise.all(following.rows.map(async (relationship) => {
-            const isFollowing = await db.FollowRelationship.findOne({
-                where: { mainUserId: userId, followedUserId: relationship.FollowedUser.userId }
-            });
+            let isFollowing = false;
+            if (userId) {
+                isFollowing = await db.FollowRelationship.findOne({
+                    where: { mainUserId: userId, followedUserId: relationship.FollowedUser.userId }
+                });
+            }
             return {
                 ...relationship.dataValues,
                 isFollowing: !!isFollowing,
-                isCurrentUser: relationship.FollowedUser.userId === userId
+                isCurrentUser: relationship.FollowedUser.userId ? relationship.FollowedUser.userId === userId : false
             };
         }));
 
@@ -1587,12 +1590,11 @@ exports.listFollowing = async (req, res) => {
     }
 };
 
-
 // Lists the users that are following the specified user.
 exports.listFollowers = async (req, res) => {
     const { id } = req.params;
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.userId; // Assuming this is set by your middleware
+    const userId = req.userId; 
 
     console.log('Listing followers for user ' + id);
     console.log('userId', userId);
@@ -1607,7 +1609,7 @@ exports.listFollowers = async (req, res) => {
             return res.status(403).json({ message: "The user's followers list is private." });
         }
 
-        const offset = (page - 1) * limit;
+        const offset = (page - 1) * parseInt(limit);
 
         console.log('Executing followers query');
         const followers = await db.FollowRelationship.findAndCountAll({
@@ -1617,18 +1619,21 @@ exports.listFollowers = async (req, res) => {
                 as: 'MainUser',
                 attributes: ['userId', 'username', 'profileImage']
             },
-            limit: parseInt(limit), // Ensure limit is an integer
-            offset: parseInt(offset), // Ensure offset is an integer
-            logging: console.log // This will log the generated SQL query
+            limit: parseInt(limit), 
+            offset: parseInt(offset), 
+            logging: console.log 
         });
 
         console.log('Followers query result:', followers);
 
         // Check follow relationships and order the result
         const rows = await Promise.all(followers.rows.map(async (relationship) => {
-            const isFollowing = await db.FollowRelationship.findOne({
-                where: { mainUserId: userId, followedUserId: relationship.MainUser.userId }
-            });
+            let isFollowing = false;
+            if (userId) {
+                isFollowing = await db.FollowRelationship.findOne({
+                    where: { mainUserId: userId, followedUserId: relationship.MainUser.userId }
+                });
+            }
             return {
                 ...relationship.dataValues,
                 isFollowing: !!isFollowing,
@@ -1645,6 +1650,7 @@ exports.listFollowers = async (req, res) => {
         res.status(500).json({ message: 'Error retrieving followers list', error: error.message });
     }
 };
+
 
 
 // Block another user

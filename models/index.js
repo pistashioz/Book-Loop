@@ -2,9 +2,11 @@ const dbConfig = require('../config/db.config');
 const { Sequelize, DataTypes } = require('sequelize');
 
 // Initialize Sequelize with parameters from the config file.
+
 const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
     host: dbConfig.HOST,
     dialect: dbConfig.dialect,
+    dialectOptions: dbConfig.dialectOptions,
     pool: {
         max: dbConfig.pool.max,
         min: dbConfig.pool.min,
@@ -111,7 +113,7 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
-+
+
 db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionUUID' });
 db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionUUID' });
 

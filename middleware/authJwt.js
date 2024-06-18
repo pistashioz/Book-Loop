@@ -11,14 +11,14 @@ const { verifyTokenHelper } = require('../utils/jwtHelpers');
  * Middleware to verify the validity of access tokens.
  * Adds user and session IDs to the request object if valid.
  */
+
 exports.verifyToken = async (req, res, next) => {
     const token = req.cookies.accessToken;
-    console.log(req.cookies.accessToken)
-    console.log('Verifying access token...');
-    console.log(`Received token: ${token}`);
+    console.log(`Token received in middleware: ${token}`);
+    
     if (!token) {
         console.log('No access token found.');
-        return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
+        return res.status(401).send({ refresh: true });
     }
 
     try {
@@ -29,28 +29,28 @@ exports.verifyToken = async (req, res, next) => {
             console.log('Invalid session.');
             res.clearCookie('accessToken');
             res.clearCookie('refreshToken', { path: '/users/me/refresh' });
-            return res.status(403).send({ redirectTo: '/login' }); // Indicate that login is required
+            return res.status(403).send({ redirectTo: '/login' });
         }
         req.userId = decoded.id;
         req.sessionId = decoded.session;
 
         if (decoded.needsRefresh) {
             console.log('Access token has expired.');
-            return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
+            return res.status(401).send({ refresh: true });
         }
 
         next();
     } catch (error) {
-/*          */
-
+        console.log(`Error decoding access token: ${error.message}`);
         if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
-            console.log('Error decoding access token:', error);
-            return res.status(401).send({ refresh: true }); // Indicate that a refresh is needed
+            return res.status(401).send({ refresh: true });
         }
 
+        console.log('Returning 500 error due to authentication failure.');
         return res.status(500).send({ message: 'Failed to authenticate token.' });
     }
 };
+
 
 // Function to issue access token
 exports.issueAccessToken = (userId, sessionId) => {

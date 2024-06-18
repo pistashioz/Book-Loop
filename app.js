@@ -90,7 +90,17 @@ app.all('*', (req, res) => {
   res.status(404).send('Resource not found. Please check the URL.');
 });
 
-// Start the server on the configured host and port
+/* // Start the server on the configured host and port
 app.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT}/`);
-});
+}); */
+
+// Export the app for testing
+module.exports = app;
+
+// Only start the server if not in test environment
+if (require.main === module) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running at http://${HOST}:${PORT}/`);
+  });
+}

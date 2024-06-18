@@ -222,7 +222,7 @@ exports.findListingById = async (req, res) => {
             include: [
                 {
                     model: User,
-                    attributes: ['userId', 'username', 'profileImage', 'showCity', 'postalCode', 'averageRating'],
+                    attributes: ['userId', 'username', 'profileImage', 'showCity', 'postalCode', 'sellerAverageRating'],
                     include: {
                         model: PostalCode,
                         as: 'postalCodeDetails',
@@ -236,21 +236,25 @@ exports.findListingById = async (req, res) => {
                         include: [
                             {
                                 model: BookAuthor,
+                                as: 'BookAuthors',
                                 include: {
                                     model: Person,
+                                    as: 'Person',
                                     attributes: ['personName']
                                 }
                             },
                             {
                                 model: BookGenre,
+                                 as: 'BookGenres',
                                 include: {
                                     model: Genre,
+                                    as: 'Genre' ,
                                     attributes: ['genreName']
                                 }
                             }
                         ]
                     },
-                    attributes: ['ISBN', 'title', 'language', 'editionType', 'pageNumber']
+                    attributes: ['ISBN', 'title', 'editionType', 'pageNumber']
                 }
             ]
         });
@@ -291,8 +295,8 @@ exports.findListingById = async (req, res) => {
         const seller = listing.User;
         const bookEdition = listing.BookEdition;
         const work = bookEdition.Work;
-        const authors = work.bookAuthors.map(ba => ba.person.personName).join(', ');
-        const genres = work.bookGenres.map(bg => bg.genre.genreName).join(', ');
+        const authors = work.BookAuthors.map(ba => ba.Person.personName).join(', ');
+        const genres = work.BookGenres.map(bg => bg.Genre.genreName).join(', ');
 
         const response = {
             listingId: listing.listingId,
