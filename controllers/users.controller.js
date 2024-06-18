@@ -120,13 +120,15 @@ console.log(tab)
             isFollowing = false;
         }
 
-        const responseData = {
+        let responseData = {
             ...user.dataValues,
             followingCount: user.totalFollowing || 0,
             followersCount: user.totalFollowers || 0,
             isCurrentUser,
-            isFollowing 
+            isFollowing,
+            isUser: req.userId ? true : false,
         };
+
         if (!tab || tab === 'listings') {
             responseData.listings = await fetchListings(id, req.userId);
         }
@@ -134,7 +136,8 @@ console.log(tab)
             responseData.feedback = await fetchFeedback(id);
         }
         if (tab === 'literaryReviews') {
-            responseData.literaryReviews = await fetchLiteraryReviews(id);
+            responseData.literaryReviews = await fetchLiteraryReviews(id, req.userId);
+            // console.log(responseData.literaryReviews);
         }
 
         res.status(200).json(responseData);
@@ -225,72 +228,105 @@ async function fetchFeedback(sellerUserId, page = 1, limit = 10) {
     });
 }
 
-/**
- * Fetches literary reviews for a given user.
- *
- * @param {number} userId - The ID of the user whose reviews to fetch.
- * @param {number} [page=1] - The page number of the reviews to fetch. Default is 1.
- * @param {number} [limit=10] - The number of reviews to fetch per page. Default is 10.
- *
- * @returns {Object} An object containing the total count of reviews, the reviews themselves, and the total number of pages.
- * @returns {Object.count} The total count of reviews.
- * @returns {Object.rows} An array of review objects.
- * @returns {Object.totalPages} The total number of pages of reviews.
- */
-async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
+async function fetchLiteraryReviews(userId, currentUserId, page = 1, limit = 10) {
+    let attributes =  [
+        'literaryReviewId',
+        'literaryReview',
+        'literaryRating',
+        'creationDate',
+        'totalLikes',
+        'totalComments',
+      ]
+    if (currentUserId){
+        attributes = [
+            ...attributes,
+        [db.sequelize.literal(`EXISTS (SELECT 1 FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId AND likeReview.userId = ${currentUserId})`), 'isLiked']
+        ]
+    } else {
+        attributes = attributes
+    }
+
     const offset = (page - 1) * limit;
+
+    
+  
     const { count, rows } = await db.LiteraryReview.findAndCountAll({
-        where: { userId: userId },
-        attributes: [
-            'literaryReviewId', 
-            'literaryReview', 
-            'literaryRating',
-            'creationDate',
-            'totalLikes',
-            'totalComments',
-        ],
-        include: [{
-            model: db.Work,
-            attributes: ['workId'],
-            include: [{
-                model: db.BookEdition,
-                attributes: ['coverImage', 'ISBN', 'title', 'UUID'],
-                where: {
-                    UUID: {[Op.eq]: db.sequelize.col('Work.primaryEditionUUID')}
-                },
-                required: false 
-            }]
-        }],
-        limit,
-        offset,
-        order: [['creationDate', 'DESC']],
-        subQuery: false
+      attributes: attributes,
+      where: { userId },
+      include: [
+        {
+          model: db.Work,
+          attributes: ['workId'],
+          include: [
+            {
+              model: db.BookEdition,
+              attributes: ['coverImage', 'ISBN', 'title', 'UUID'],
+              where: {
+                UUID: { [Op.eq]: db.sequelize.col('Work.primaryEditionUUID') },
+              },
+              required: false,
+            },
+            {
+              model: db.BookAuthor,
+              as: 'BookAuthors',
+              include: {
+                model: db.Person,
+                as: 'Person',
+                attributes: ['personId', 'personName'],
+              },
+            },
+          ],
+        },
+      ],
+      limit,
+      offset,
+      order: [['creationDate', 'DESC']],
+      subQuery: false,
     });
+  
+    const reviews = await Promise.all(
+      rows.map(async (review) => {
+        const author = await Promise.all(
+          review.Work.BookAuthors.map(async (bookAuthor) => {
+            try {
+              const person = await db.Person.findByPk(bookAuthor.personId);
+              return person ? person : 'Unknown Author';
+            } catch (error) {
+              console.error('Error fetching author:', error);
+              return 'Unknown Author'; 
+            }
+          })
+        );
+  
+        const bookEdition = review.Work.BookEditions[0] ? {
+          coverImage: review.Work.BookEditions[0].coverImage,
+          UUID: review.Work.BookEditions[0].UUID,
+          ISBN: review.Work.BookEditions[0].ISBN,
+          title: review.Work.BookEditions[0].title,
+          workId: review.Work.workId,
+          author: author,
+        } : null;
 
-    const reviews = rows.map(review => ({
-        literaryReviewId: review.literaryReviewId,
-        literaryReview: review.literaryReview,
-        literaryRating: review.literaryRating,
-        creationDate: review.creationDate,
-        likeCount: review.totalLikes,
-        commentCount: review.totalComments,
-        workTitle: review.Work.originalTitle,
-        bookEdition: review.Work.BookEditions[0]? {
-            coverImage: review.Work.BookEditions[0].coverImage,
-            UUID: review.Work.BookEditions[0].UUID,
-            ISBN: review.Work.BookEditions[0].ISBN,
-            title: review.Work.BookEditions[0].title,
-            workId: review.Work.workId
-        } : null
-    }));
-    console.log(count)
+        return {
+          literaryReviewId: review.literaryReviewId,
+          literaryReview: review.literaryReview,
+          literaryRating: review.literaryRating,
+          isLiked: review.dataValues.isLiked,
+          creationDate: review.creationDate,
+          likeCount: review.totalLikes,
+          commentCount: review.totalComments,
+          bookEdition,
+        };
+      })
+    );
+
     return {
-        count,
-        rows: reviews,
-        totalPages: Math.ceil(count / limit)
+      count,
+      rows: reviews,
+      totalPages: Math.ceil(count / limit),
     };
-}
-
+  }
+  
 
 // Create a new user
 exports.create = async (req, res) => {

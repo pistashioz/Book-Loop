@@ -111,7 +111,7 @@ db.BookEdition.belongsTo(db.Publisher, { foreignKey: 'publisherId' });
 
 db.Work.hasMany(db.BookEdition, { foreignKey: 'workId', onDelete: 'CASCADE' });
 db.BookEdition.belongsTo(db.Work, { foreignKey: 'workId' });
-
++
 db.Work.belongsTo(db.BookEdition, { as: 'PrimaryEdition', foreignKey: 'primaryEditionUUID' });
 db.BookEdition.hasOne(db.Work, { as: 'PrimaryWork', foreignKey: 'primaryEditionUUID' });
 
