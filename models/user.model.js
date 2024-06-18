@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const { getEnumValues } = require('../utils/sequelizeHelpers');
 
-// Helper Functions
+/* // Helper Functions
 const validateAddressComplete = function(value, next) {
     if ((value !== undefined || this.street !== undefined || this.streetNumber !== undefined || this.postalCode !== undefined) && 
     !(this.street && this.streetNumber && this.postalCode)) {
@@ -9,7 +9,7 @@ const validateAddressComplete = function(value, next) {
     }
     next();
 };
-
+ */
 // User Model Definition
 module.exports = (sequelize, DataTypes) => {
     const User = sequelize.define('User', {

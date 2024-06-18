@@ -1,8 +1,6 @@
-// tests/integration/auth.test.js
-
 const request = require('supertest');
-const app = require('../../app'); // Supondo que o app seja exportado do arquivo app.js
-const { User, SessionLog, Token } = require('../../models');
+const app = require('../../app');
+const { User, SessionLog, Token, sequelize } = require('../../models');
 const { issueAccessToken, handleRefreshToken } = require('../../middleware/authJwt');
 
 jest.mock('../../models');
@@ -21,6 +19,10 @@ describe('Auth Endpoints', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sequelize.transaction = jest.fn().mockImplementation(() => ({
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+    }));
   });
 
   test('Deve fazer login e retornar tokens e informações do utilizador', async () => {

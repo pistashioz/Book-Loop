@@ -7,12 +7,9 @@ async function cleanupExpiredTokens() {
     const now = new Date();
     console.log(`Running cleanup at: ${now.toISOString()}`);
     try {
-        // Find all tokens that have expired and are not invalidated
         const tokens = await Token.findAll({
             where: {
-                expiresAt: {
-                    [Op.lt]: now
-                },
+                expiresAt: { [Op.lt]: now },
                 invalidated: false,
                 tokenType: 'refresh'
             }
@@ -46,5 +43,6 @@ async function cleanupExpiredTokens() {
     }
 }
 
-// Schedule the cleanup job to run every hour
-cron.schedule('0 * * * *', cleanupExpiredTokens);
+if (process.env.NODE_ENV !== 'test') {
+    cron.schedule('0 * * * *', cleanupExpiredTokens);
+}

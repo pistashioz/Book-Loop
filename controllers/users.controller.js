@@ -448,7 +448,7 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 }
 
 // Helper function to set cookies for refresh token and access token
-function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) {
+exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) =>{
     const isProduction = process.env.NODE_ENV === 'production';
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken', { path: '/users/me/refresh' });
@@ -471,13 +471,12 @@ function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
 
-
-
 // Login action for user
 exports.login = async (req, res) => {
     const { usernameOrEmail, password, reactivate } = req.body;
+    let t;
     try {
-        const t = await db.sequelize.transaction();
+        t = await db.sequelize.transaction();
         
         const user = await User.findOne({
             where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
@@ -488,9 +487,9 @@ exports.login = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
         
-        // Check if the account is deactivated or scheduled for deletion beyond grace period
         if (!reactivate && (user.isActiveStatus === 'deactivated' || 
         (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
+            await t.rollback();
             return res.status(403).json({
                 message: "Account is deactivated or past the scheduled deletion date. Reactivation is not possible.",
                 actionRequired: false
@@ -508,7 +507,6 @@ exports.login = async (req, res) => {
             transaction: t
         });
 
-        // Invalidate existing session if found
         if (existingSession) {
             await SessionLog.update(
                 { endTime: new Date() },
@@ -530,14 +528,13 @@ exports.login = async (req, res) => {
         const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
         
-        createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
+        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, { transaction: t });
         
         console.log(`access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
         console.log(`refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
 
-        setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
+        this.setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
         
-        // Reactivate the account if requested
         if (reactivate) {
             await User.update({
                 isActiveStatus: 'active',
@@ -548,17 +545,19 @@ exports.login = async (req, res) => {
             });
         }
         
-        // Commit transaction and return success
         await t.commit();
         res.status(200).json({
             message: "Login successful",
             user: { id: user.userId, username: user.username, email: user.email, isAdmin: user.isAdmin }
         });
     } catch (error) {
+        if (t) await t.rollback();
         console.error("Error during login:", error);
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
 };
+
+
 
 // Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
@@ -594,7 +593,7 @@ exports.refreshTokens = async (req, res) => {
         await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
         console.log('New tokens issued and database updated.');
 
-        setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
+        this.setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
 
         return res.status(200).json({ success: true });
     } catch (error) {
@@ -1260,7 +1259,7 @@ async function updateAccountSettings(userId, body) {
 
 
 // Logout from all sessions globally
-async function logoutUserSessions(userId, transaction) {
+exports.logoutUserSessions = async (userId, transaction) => {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
         // Invalidate all session logs for the user

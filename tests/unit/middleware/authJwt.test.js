@@ -25,7 +25,7 @@ describe('Middleware de Autenticação - verifyToken', () => {
   });
 
   afterAll(() => {
-    jest.resetAllMocks(); // Reseta todos os mocks após os testes
+    jest.resetAllMocks(); 
   });
 
   test('Deve retornar 401 se não houver token', async () => {

@@ -1,5 +1,3 @@
-// tests/unit/utils/jwtHelpers.test.js
-
 const jwt = require('jsonwebtoken');
 const { issueAccessToken, handleRefreshToken } = require('../../../middleware/authJwt');
 const config = require('../../../config/auth.config');
