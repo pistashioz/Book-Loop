@@ -10,7 +10,8 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
         min: dbConfig.pool.min,
         acquire: dbConfig.pool.acquire,
         idle: dbConfig.pool.idle
-    }
+    },
+    logging: console.log // Adiciona logs SQL
 });
 
 // Authenticate the connection to the database and sync models.
