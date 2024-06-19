@@ -13,6 +13,7 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
     }
 });
 
+console.log(dbConfig)
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
      .then(() => {
