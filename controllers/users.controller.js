@@ -1209,7 +1209,7 @@ async function updateAccountSettings(userId, body) {
             user.changed('password', true);
             
             // Invalidate all sessions due to password change
-            await this.logoutUserSessions(userId, transaction);
+            await logoutUserSessions(userId, transaction);
         }
 
         let isEmailChanged = email && email !== user.email;
