@@ -19,7 +19,7 @@ describe('User Model', () => {
 
   beforeEach(async () => {
     console.log('Starting a new test...');
-    await User.destroy({ where: { userId: { [Sequelize.Op.gt]: 24 } } }); // Limpar utilizadores com userId > 24 antes de cada teste
+    await User.destroy({ where: { userId: { [Sequelize.Op.gt]: 24 } } }); 
   });
 
   afterEach(async () => {

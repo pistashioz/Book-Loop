@@ -104,7 +104,7 @@ describe('BookContributor Model', () => {
   test('Deve encontrar uma bookContributor existente', async () => {
     console.log('Running test: Deve encontrar uma bookContributor existente');
 
-    // Pre-create the bookContributor entry to test finding it
+
     await BookContributor.create({
       editionUUID: '83d5075d-2023-11ef-a329-ac1f6bad9969',
       personId: 18,

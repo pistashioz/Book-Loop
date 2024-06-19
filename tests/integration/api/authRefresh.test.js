@@ -1,12 +1,12 @@
 const request = require('supertest');
-const app = require('../../app');
-const { Token, sequelize } = require('../../models');
-const { issueAccessToken, handleRefreshToken } = require('../../middleware/authJwt');
+const app = require('../../../app');
+const { Token, sequelize } = require('../../../models');
+const { issueAccessToken, handleRefreshToken } = require('../../../middleware/authJwt');
 const jwt = require('jsonwebtoken');
-const config = require('../../config/auth.config');
+const config = require('../../../config/auth.config');
 
-jest.mock('../../models');
-jest.mock('../../middleware/authJwt');
+jest.mock('../../../models');
+jest.mock('../../../middleware/authJwt');
 jest.mock('jsonwebtoken');
 
 describe('Auth Refresh Tokens Endpoint', () => {
