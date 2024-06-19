@@ -1406,7 +1406,7 @@ async function updatePrivacySettings(userId, settings) {
 }
 
 // Logout from all sessions globally
-exports.logoutUserSessions = async (userId, transaction) => {
+async function logoutUserSessions(userId, transaction) {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
         // Invalidate all session logs for the user
@@ -1437,6 +1437,8 @@ exports.logoutUserSessions = async (userId, transaction) => {
         throw error;  // Propagate this error up to catch it in the calling function
     }
 }
+
+exports.logoutUserSessions = logoutUserSessions;
 
 function sendVerificationEmail(email) {
     console.log(`Sending verification email to ${email}`);
