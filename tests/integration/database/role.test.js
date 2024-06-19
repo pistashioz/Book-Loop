@@ -15,7 +15,7 @@ describe('Role Model', () => {
 
   beforeEach(async () => {
     console.log('Starting a new test...');
-    await Role.destroy({ where: { roleId: { [Sequelize.Op.gt]: 3 } } }); // Limpar roles com roleId > 3 antes de cada teste
+    await Role.destroy({ where: { roleId: { [Sequelize.Op.gt]: 3 } } }); 
   });
 
   afterEach(async () => {
