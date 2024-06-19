@@ -1102,12 +1102,17 @@ exports.updateUserSettings = async (req, res) => {
                 return res.status(400).json({ message: "Invalid settings type specified" });
         }
 
+        if (!updateResult || typeof updateResult.status !== 'number' || typeof updateResult.data !== 'object') {
+            throw new Error("Invalid response from settings update function");
+        }
+
         return res.status(updateResult.status).json(updateResult.data);
     } catch (error) {
         console.error('Error updating user settings', error);
         return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
 };
+
 
 async function updateProfileSettings(userId, body) {
     const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
@@ -1255,12 +1260,13 @@ async function updateAccountSettings(userId, body) {
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
+
+
 // Helper function to update notification settings for a user
 async function updateNotificationSettings(userId, settings) {
     let transaction;
     try {
         transaction = await db.sequelize.transaction();
-        console.log(settings);
 
         // Extract the notifications object from settings
         const notificationSettings = settings.notifications;
@@ -1269,8 +1275,6 @@ async function updateNotificationSettings(userId, settings) {
         }
 
         for (const [configKey, configValue] of Object.entries(notificationSettings)) {
-            console.log(typeof configKey); // Should be string
-            console.log(configValue); // Should be the value of the configKey
 
             // First, fetch the corresponding configuration ID
             const config = await db.Configuration.findOne({
@@ -1321,14 +1325,15 @@ async function updateNotificationSettings(userId, settings) {
         }
 
         await transaction.commit();
-        return { message: "Notification settings updated successfully" };
+        return { status: 200, data: { message: "Notification settings updated successfully" } };
     } catch (error) {
         // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating notification settings", error);
-        throw new Error("Failed to update notification settings");
+        return { status: 500, data: { message: "Failed to update notification settings", error: error.message } };
     }
 }
+
 
 // Helper function to update privacy settings for a user
 async function updatePrivacySettings(userId, settings) {
