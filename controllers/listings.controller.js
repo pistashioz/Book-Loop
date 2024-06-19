@@ -204,7 +204,6 @@ exports.findAllListings = async (req, res) => {
 };
 
 
-
 /**
  * Retrieve a specific listing by ID with detailed information.
  * 
@@ -226,7 +225,7 @@ exports.findListingById = async (req, res) => {
                 },
                 {
                     model: User,
-                    attributes: ['userId', 'username', 'profileImage', 'showCity', 'postalCode', 'sellerAverageRating'],
+                    attributes: ['userId', 'username', 'profileImage', 'showCity', 'postalCode', 'sellerAverageRating', 'sellerReviewCount'],
                     include: {
                         model: PostalCode,
                         as: 'postalCodeDetails',
@@ -237,6 +236,7 @@ exports.findListingById = async (req, res) => {
                     model: BookEdition,
                     include: {
                         model: Work,
+                        attributes: ['workId'],
                         include: [
                             {
                                 model: BookAuthor,
@@ -244,21 +244,21 @@ exports.findListingById = async (req, res) => {
                                 include: {
                                     model: Person,
                                     as: 'Person',
-                                    attributes: ['personName']
+                                    attributes: ['personName', 'personId']
                                 }
                             },
                             {
                                 model: BookGenre,
-                                 as: 'BookGenres',
+                                as: 'BookGenres',
                                 include: {
                                     model: Genre,
-                                    as: 'Genre' ,
-                                    attributes: ['genreName']
+                                    as: 'Genre',
+                                    attributes: ['genreName', 'genreId']
                                 }
                             }
                         ]
                     },
-                    attributes: ['ISBN', 'title', 'editionType', 'pageNumber']
+                    attributes: ['ISBN', 'title', 'editionType', 'pageNumber', 'UUID']
                 }
             ]
         });
@@ -299,8 +299,18 @@ exports.findListingById = async (req, res) => {
         const seller = listing.User;
         const bookEdition = listing.BookEdition;
         const work = bookEdition.Work;
-        const authors = work.BookAuthors.map(ba => ba.Person.personName).join(', ');
-        const genres = work.BookGenres.map(bg => bg.Genre.genreName).join(', ');
+
+        // Create authors array with appropriate structure
+        const authors = work.BookAuthors.map(ba => ({
+            personName: ba.Person.personName,
+            personId: ba.Person.personId
+        }));
+
+        // Create genres array with appropriate structure
+        const genres = work.BookGenres.map(bg => ({
+            genreName: bg.Genre.genreName,
+            genreId: bg.Genre.genreId
+        }));
 
         const response = {
             listingId: listing.listingId,
@@ -312,23 +322,25 @@ exports.findListingById = async (req, res) => {
             availability: listing.availability,
             listingImages: listing.ListingImages.map(li => li.imageUrl),
             seller: {
+                userId: seller.userId,
                 username: seller.username,
                 profileImage: seller.profileImage,
-                averageRating: seller.averageRating,
-                purchaseReviewsCount: await PurchaseReview.count({ where: { sellerUserId: seller.userId } }),
+                averageRating: seller.sellerAverageRating,
+                purchaseReviewsCount: seller.sellerReviewCount,
                 locality: seller.showCity && seller.postalCode ? seller.postalCodeDetails.locality : null,
                 country: seller.showCity && seller.postalCode ? seller.postalCodeDetails.country : null
             },
             viewsCount,
             wishlistCount,
             book: {
+                UUID: bookEdition.UUID,
                 ISBN: bookEdition.ISBN,
                 title: bookEdition.title,
-                language: bookEdition.language,
                 editionType: bookEdition.editionType,
                 pageNumber: bookEdition.pageNumber,
                 authors,
-                genres
+                genres,
+                workId: work.workId
             },
             links: [{ rel: "self", href: `/listings/${listing.listingId}`, method: "GET" }]
         };
@@ -339,5 +351,3 @@ exports.findListingById = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching the listing." });
     }
 };
-
-
