@@ -1077,7 +1077,6 @@ async function fetchPrivacySettings(userId) {
 }
 
 /////
-
 // Update user settings based on type
 exports.updateUserSettings = async (req, res) => {
     const userId = req.userId;  // Extracted from verifyToken middleware
@@ -1112,6 +1111,7 @@ exports.updateUserSettings = async (req, res) => {
         return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
 };
+
 
 
 async function updateProfileSettings(userId, body) {
@@ -1334,7 +1334,6 @@ async function updateNotificationSettings(userId, settings) {
     }
 }
 
-
 // Helper function to update privacy settings for a user
 async function updatePrivacySettings(userId, settings) {
     let transaction;
@@ -1401,14 +1400,15 @@ async function updatePrivacySettings(userId, settings) {
         }
 
         await transaction.commit();
-        return { message: "Privacy settings updated successfully" };
+        return { status: 200, data: { message: "Privacy settings updated successfully" } };
     } catch (error) {
         // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating privacy settings", error);
-        throw new Error("Failed to update privacy settings");
+        return { status: 500, data: { message: "Failed to update privacy settings", error: error.message } };
     }
 }
+
 
 // Logout from all sessions globally
 async function logoutUserSessions(userId, transaction) {
