@@ -65,7 +65,9 @@ module.exports = (sequelize, DataTypes) => {
         });
 
         const reviewCount = reviews.length;
-        const averageRating = reviews.reduce((sum, review) => sum + parseFloat(review.sellerRating), 0) / reviewCount;
+        const averageRating = reviewCount > 0 
+            ? reviews.reduce((sum, review) => sum + parseFloat(review.sellerRating), 0) / reviewCount 
+            : 0;
 
         await sequelize.models.User.update(
             {

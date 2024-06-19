@@ -1,10 +1,10 @@
 const request = require('supertest');
-const app = require('../../app');
-const { User, SessionLog, Token, sequelize } = require('../../models');
-const { issueAccessToken, handleRefreshToken } = require('../../middleware/authJwt');
+const app = require('../../../app');
+const { User, SessionLog, Token, sequelize } = require('../../../models');
+const { issueAccessToken, handleRefreshToken } = require('../../../middleware/authJwt');
 
-jest.mock('../../models');
-jest.mock('../../middleware/authJwt');
+jest.mock('../../../models');
+jest.mock('../../../middleware/authJwt');
 
 describe('Auth Endpoints', () => {
   let server;

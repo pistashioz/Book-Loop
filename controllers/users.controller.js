@@ -1130,15 +1130,15 @@ async function updateProfileSettings(userId, body) {
         }, { transaction: t });
 
         await t.commit();
-        return {
-            message: "User profile updated successfully",
+        return {status: 400,
+            data: {message: "User profile updated successfully",
             user: {
                 about: user.about,
                 defaultLanguage: user.defaultLanguage,
                 showCity: user.showCity,
                 // profileImage: user.profileImage
             }
-        };
+        }};
     } catch (error) {
         await t.rollback();
         if (error instanceof ValidationError) {
@@ -1254,48 +1254,6 @@ async function updateAccountSettings(userId, body) {
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
-
-
-
-
-// Logout from all sessions globally
-exports.logoutUserSessions = async (userId, transaction) => {
-    console.log(`Logging out all sessions globally for user ${userId}...`);
-    try {
-        // Invalidate all session logs for the user
-        await SessionLog.update({
-            endTime: new Date()
-        }, {
-            where: {
-                userId: userId,
-                endTime: null
-            },
-            transaction
-        });
-        
-        // Invalidate all tokens for the user
-        await Token.update({
-            invalidated: true,
-            lastUsedAt: new Date()
-        }, {
-            where: {
-                userId: userId,
-                invalidated: false,
-                lastUsedAt: null
-            },
-            transaction
-        });
-    } catch (error) {
-        console.error("Failed to log out sessions globally", error);
-        throw error;  // Propagate this error up to catch it in the calling function
-    }
-}
-
-function sendVerificationEmail(email) {
-    console.log(`Sending verification email to ${email}`);
-    // email sending logic here
-}
-
 // Helper function to update notification settings for a user
 async function updateNotificationSettings(userId, settings) {
     let transaction;
@@ -1445,6 +1403,46 @@ async function updatePrivacySettings(userId, settings) {
         throw new Error("Failed to update privacy settings");
     }
 }
+
+// Logout from all sessions globally
+exports.logoutUserSessions = async (userId, transaction) => {
+    console.log(`Logging out all sessions globally for user ${userId}...`);
+    try {
+        // Invalidate all session logs for the user
+        await SessionLog.update({
+            endTime: new Date()
+        }, {
+            where: {
+                userId: userId,
+                endTime: null
+            },
+            transaction
+        });
+        
+        // Invalidate all tokens for the user
+        await Token.update({
+            invalidated: true,
+            lastUsedAt: new Date()
+        }, {
+            where: {
+                userId: userId,
+                invalidated: false,
+                lastUsedAt: null
+            },
+            transaction
+        });
+    } catch (error) {
+        console.error("Failed to log out sessions globally", error);
+        throw error;  // Propagate this error up to catch it in the calling function
+    }
+}
+
+function sendVerificationEmail(email) {
+    console.log(`Sending verification email to ${email}`);
+    // email sending logic here
+}
+
+
 
 
 
