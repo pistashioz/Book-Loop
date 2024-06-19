@@ -36,7 +36,6 @@ async function cleanupSuspensions() {
     }
 }
 
-// Schedule the suspension cleanup job to run daily at midnight
-cron.schedule('0 0 * * *', cleanupSuspensions);
-
-//cron.schedule('* * * * *', cleanupSuspensions);
+if (process.env.NODE_ENV !== 'test') {
+    cron.schedule('0 0 * * *', cleanupSuspensions);
+}

@@ -15,18 +15,24 @@ exports.findAll = async (req, res) => {
         const page = parseInt(req.query.page, 10) || 1;
         const limit = parseInt(req.query.limit, 10) || 10;
         const offset = (page - 1) * limit;
-        const { role } = req.query;
+        const { role, startsWith } = req.query;
 
         let where = {};
         if (role) {
             const roleData = await Role.findOne({ where: { roleName: role }, transaction: t });
             if (roleData) {
+                console.log(`Filtering by role '${role}'.`);
                 const personRoles = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'], transaction: t });
                 const personIds = personRoles.map(pr => pr.personId);
                 where = { personId: { [Op.in]: personIds } };
             } else {
                 return res.status(404).json({ success: false, message: `Role '${role}' not found.` });
             }
+        }
+
+        if (startsWith) {
+            console.log(`Filtering by name starting with '${startsWith}'.`);
+            where.personName = { [Op.startsWith]: startsWith };
         }
 
         const { count, rows: persons } = await Person.findAndCountAll({
@@ -108,6 +114,7 @@ exports.findAll = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching persons" });
     }
 };
+
 
 
 /**

@@ -1,4 +1,3 @@
-// models/personRole.model.js
 module.exports = (sequelize, DataTypes) => {
     const PersonRole = sequelize.define("PersonRole", {
         personId: {

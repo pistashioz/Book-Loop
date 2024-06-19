@@ -7,7 +7,7 @@ const { Op, ValidationError } = require('sequelize');
 
 
 // Access models through the centralized db object
-const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person   } = db;
+const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person, Role, PersonRole   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
 const MAX_ENTRIES_PER_TYPE = 30;
@@ -15,23 +15,34 @@ const MAX_SEARCH_ENTRIES = 10;
 
 // Retrieve all users
 exports.findAll = async (req, res) => {
-    const { username = "" } = req.query;
+    const { username = "", status = "all" } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
     try {
+        let whereClause = {
+            username: {
+                [Op.like]: `%${username}%`
+            }
+        };
+
+        if (status !== "all") {
+            whereClause.isActiveStatus = status; // Apply filter based on status
+        }
+
         const { count, rows } = await db.User.findAndCountAll({
-            where: {
-                username: {
-                    [Op.like]: `%${username}%`
-                }
-            },
+            where: whereClause,
             attributes: [
+                'userId',
                 'profileImage',
                 'username',
                 'sellerAverageRating',
-                'sellerReviewCount'
+                'sellerReviewCount',
+                'isActiveStatus',
+                'registrationDate',
+                'isAdmin',
+                'deletionScheduleDate'
             ],
             order: [
                 ['username', 'ASC']
@@ -60,7 +71,8 @@ exports.findAll = async (req, res) => {
 exports.findOne = async (req, res) => {
     const { id } = req.params;
     const tab = req.query.tab; 
-
+    console.log(id)
+console.log(tab)
     try {
         const user = await db.User.findByPk(id, {
             attributes: [
@@ -94,20 +106,38 @@ exports.findOne = async (req, res) => {
             return res.status(404).send({ message: "User not found." });
         }
 
-        const responseData = {
+        const isCurrentUser = req.userId === user.userId;
+        let isFollowing = false;
+        if (!isCurrentUser && req.userId) {
+            const followRelationship = await db.FollowRelationship.findOne({
+                where: {
+                    mainUserId: req.userId,
+                    followedUserId: user.userId
+                }
+            });
+            isFollowing = !!followRelationship;
+        } else {
+            isFollowing = false;
+        }
+
+        let responseData = {
             ...user.dataValues,
             followingCount: user.totalFollowing || 0,
-            followersCount: user.totalFollowers || 0
+            followersCount: user.totalFollowers || 0,
+            isCurrentUser,
+            isFollowing,
+            isUser: req.userId ? true : false,
         };
 
         if (!tab || tab === 'listings') {
-            responseData.listings = await fetchListings(id);
+            responseData.listings = await fetchListings(id, req.userId);
         }
         if (tab === 'feedback') {
             responseData.feedback = await fetchFeedback(id);
         }
         if (tab === 'literaryReviews') {
-            responseData.literaryReviews = await fetchLiteraryReviews(id);
+            responseData.literaryReviews = await fetchLiteraryReviews(id, req.userId);
+            // console.log(responseData.literaryReviews);
         }
 
         res.status(200).json(responseData);
@@ -117,53 +147,59 @@ exports.findOne = async (req, res) => {
     }
 };
 
+async function fetchListings(sellerUserId, currentUserId, page = 1, limit = 8) {
+    let attributes = [
+        'listingId',
+        'listingTitle',
+        'price',
+        'listingCondition',
+        [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
+      ]
+    if (currentUserId){
+        attributes = [
+            ...attributes,
+                [db.sequelize.literal(`EXISTS (SELECT 1 FROM wishlist WHERE wishlist.listingId = Listing.listingId AND wishlist.userId = ${currentUserId})`), 'isLiked']
+        ]
+    } else {
+        attributes = attributes
+    }
 
-/**
- * Fetches listings for a given seller user with pagination, adjusting for grouped count.
- * @param {number} sellerUserId - The ID of the user whose listings to fetch.
- * @param {number} [page=1] - The page number of the listings to fetch.
- * @param {number} [limit=10] - The number of listings to fetch per page.
- * @returns {Object} An object containing the total count of listings, the listings themselves, and the total number of pages.
- */
-async function fetchListings(sellerUserId, page = 1, limit = 10) {
     const offset = (page - 1) * limit;
     const { count, rows } = await db.Listing.findAndCountAll({
-        where: { sellerUserId: sellerUserId },
-        attributes: [
-            'listingId',
-            'listingTitle',
-            'price',
-            'listingCondition',
-            [db.sequelize.literal(`(SELECT COUNT(*) FROM wishlist WHERE wishlist.listingId = Listing.listingId)`), 'likesCount'],
-        ],
-        include: [
-            {
-                model: db.BookEdition,
-                attributes: ['title']
-            },
-            {
-                model: db.ListingImage,
-                attributes: ['imageUrl'],
-                limit: 1
-            },
-        ],
-        group: ['Listing.listingId'],
-        limit,
-        offset,
-        subQuery: false,
-        order: [['listingId', 'ASC']] // Sorting by listing ID for consistency
+      where: { sellerUserId: sellerUserId },
+      attributes: attributes,
+      include: [
+        {
+          model: db.BookEdition,
+          attributes: ['title', 'UUID'],
+          include: {
+            model: db.Work,
+            as: 'PrimaryWork',
+            attributes: ['workId']
+          }
+        },
+        {
+          model: db.ListingImage,
+          attributes: ['imageUrl'],
+          limit: 1
+        },
+      ],
+      group: ['Listing.listingId'],
+      limit,
+      offset,
+      subQuery: false,
+      order: [['listingId', 'ASC']]
     });
-
-    // Calculate the total count from grouped results
+  
     const totalCount = count.reduce((total, item) => total + item.count, 0);
-
+  
     return {
-        count: totalCount,
-        rows,
-        totalPages: Math.ceil(totalCount / limit)
+      count: totalCount,
+      rows,
+      totalPages: Math.ceil(totalCount / limit)
     };
-}
-
+  }
+  
 
 /**
  * Fetches feedback (purchase reviews) for a given seller with pagination.
@@ -192,70 +228,105 @@ async function fetchFeedback(sellerUserId, page = 1, limit = 10) {
     });
 }
 
-/**
- * Fetches literary reviews for a given user.
- *
- * @param {number} userId - The ID of the user whose reviews to fetch.
- * @param {number} [page=1] - The page number of the reviews to fetch. Default is 1.
- * @param {number} [limit=10] - The number of reviews to fetch per page. Default is 10.
- *
- * @returns {Object} An object containing the total count of reviews, the reviews themselves, and the total number of pages.
- * @returns {Object.count} The total count of reviews.
- * @returns {Object.rows} An array of review objects.
- * @returns {Object.totalPages} The total number of pages of reviews.
- */
-async function fetchLiteraryReviews(userId, page = 1, limit = 10) {
+async function fetchLiteraryReviews(userId, currentUserId, page = 1, limit = 10) {
+    let attributes =  [
+        'literaryReviewId',
+        'literaryReview',
+        'literaryRating',
+        'creationDate',
+        'totalLikes',
+        'totalComments',
+      ]
+    if (currentUserId){
+        attributes = [
+            ...attributes,
+        [db.sequelize.literal(`EXISTS (SELECT 1 FROM likeReview WHERE likeReview.literaryReviewId = LiteraryReview.literaryReviewId AND likeReview.userId = ${currentUserId})`), 'isLiked']
+        ]
+    } else {
+        attributes = attributes
+    }
+
     const offset = (page - 1) * limit;
+
+    
+  
     const { count, rows } = await db.LiteraryReview.findAndCountAll({
-        where: { userId: userId },
-        attributes: [
-            'literaryReviewId', 
-            'literaryReview', 
-            'literaryRating',
-            'creationDate',
-            'totalLikes',
-            [db.sequelize.literal(`(SELECT COUNT(*) FROM commentReview WHERE commentReview.literaryReviewId = LiteraryReview.literaryReviewId)`), 'commentCount']
-        ],
-        include: [{
-            model: db.Work,
-            attributes: ['originalTitle'],
-            include: [{
-                model: db.BookEdition,
-                attributes: ['coverImage', 'ISBN', 'title'],
-                where: {
-                    title: {[Op.eq]: db.sequelize.col('Work.originalTitle')}
-                },
-                required: false 
-            }]
-        }],
-        limit,
-        offset,
-        order: [['creationDate', 'DESC']],
-        subQuery: false
+      attributes: attributes,
+      where: { userId },
+      include: [
+        {
+          model: db.Work,
+          attributes: ['workId'],
+          include: [
+            {
+              model: db.BookEdition,
+              attributes: ['coverImage', 'ISBN', 'title', 'UUID'],
+              where: {
+                UUID: { [Op.eq]: db.sequelize.col('Work.primaryEditionUUID') },
+              },
+              required: false,
+            },
+            {
+              model: db.BookAuthor,
+              as: 'BookAuthors',
+              include: {
+                model: db.Person,
+                as: 'Person',
+                attributes: ['personId', 'personName'],
+              },
+            },
+          ],
+        },
+      ],
+      limit,
+      offset,
+      order: [['creationDate', 'DESC']],
+      subQuery: false,
     });
+  
+    const reviews = await Promise.all(
+      rows.map(async (review) => {
+        const author = await Promise.all(
+          review.Work.BookAuthors.map(async (bookAuthor) => {
+            try {
+              const person = await db.Person.findByPk(bookAuthor.personId);
+              return person ? person : 'Unknown Author';
+            } catch (error) {
+              console.error('Error fetching author:', error);
+              return 'Unknown Author'; 
+            }
+          })
+        );
+  
+        const bookEdition = review.Work.BookEditions[0] ? {
+          coverImage: review.Work.BookEditions[0].coverImage,
+          UUID: review.Work.BookEditions[0].UUID,
+          ISBN: review.Work.BookEditions[0].ISBN,
+          title: review.Work.BookEditions[0].title,
+          workId: review.Work.workId,
+          author: author,
+        } : null;
 
-    const reviews = rows.map(review => ({
-        literaryReviewId: review.literaryReviewId,
-        literaryReview: review.literaryReview,
-        literaryRating: review.literaryRating,
-        creationDate: review.creationDate,
-        likeCount: review.dataValues.likeCount,
-        commentCount: review.dataValues.commentCount,
-        workTitle: review.Work.originalTitle,
-        bookEdition: review.Work.BookEditions[0]? {
-            coverImage: review.Work.BookEditions[0].coverImage,
-            ISBN: review.Work.BookEditions[0].ISBN,
-            title: review.Work.BookEditions[0].title
-        } : null
-    }));
-    console.log(count)
+        return {
+          literaryReviewId: review.literaryReviewId,
+          literaryReview: review.literaryReview,
+          literaryRating: review.literaryRating,
+          isLiked: review.dataValues.isLiked,
+          creationDate: review.creationDate,
+          likeCount: review.totalLikes,
+          commentCount: review.totalComments,
+          bookEdition,
+        };
+      })
+    );
+
     return {
-        count,
-        rows: reviews,
-        totalPages: Math.ceil(count / limit)
+      count,
+      rows: reviews,
+      totalPages: Math.ceil(count / limit),
     };
-}
-
+  }
+  
 
 // Create a new user
 exports.create = async (req, res) => {
@@ -377,7 +448,7 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
 }
 
 // Helper function to set cookies for refresh token and access token
-function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) {
+exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) =>{
     const isProduction = process.env.NODE_ENV === 'production';
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken', { path: '/users/me/refresh' });
@@ -400,14 +471,13 @@ function setTokenCookies(res, accessToken, accessTokenCookieExpiry, refreshToken
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
 
-
-
 // Login action for user
 exports.login = async (req, res) => {
     console.log('inside login action')
     const { usernameOrEmail, password, reactivate } = req.body;
+    let t;
     try {
-        const t = await db.sequelize.transaction();
+        t = await db.sequelize.transaction();
         
         const user = await User.findOne({
             where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
@@ -418,9 +488,9 @@ exports.login = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
         
-        // Check if the account is deactivated or scheduled for deletion beyond grace period
         if (!reactivate && (user.isActiveStatus === 'deactivated' || 
         (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
+            await t.rollback();
             return res.status(403).json({
                 message: "Account is deactivated or past the scheduled deletion date. Reactivation is not possible.",
                 actionRequired: false
@@ -438,7 +508,6 @@ exports.login = async (req, res) => {
             transaction: t
         });
 
-        // Invalidate existing session if found
         if (existingSession) {
             await SessionLog.update(
                 { endTime: new Date() },
@@ -457,14 +526,16 @@ exports.login = async (req, res) => {
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
         
-        const { token: accessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
+        const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
         
-        createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires);
+        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, { transaction: t });
         
-        setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
+        console.log(`access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
+        console.log(`refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
+
+        this.setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
         
-        // Reactivate the account if requested
         if (reactivate) {
             await User.update({
                 isActiveStatus: 'active',
@@ -475,17 +546,19 @@ exports.login = async (req, res) => {
             });
         }
         
-        // Commit transaction and return success
         await t.commit();
         res.status(200).json({
             message: "Login successful",
             user: { id: user.userId, username: user.username, email: user.email, isAdmin: user.isAdmin }
         });
     } catch (error) {
+        if (t) await t.rollback();
         console.error("Error during login:", error);
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
 };
+
+
 
 // Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
@@ -521,7 +594,7 @@ exports.refreshTokens = async (req, res) => {
         await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
         console.log('New tokens issued and database updated.');
 
-        setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
+        this.setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
 
         return res.status(200).json({ success: true });
     } catch (error) {
@@ -668,54 +741,77 @@ exports.initiateAccountDeletion = async (req, res) => {
     }
 };
 
-// Update or create a user address and corresponding postal code
+/**
+ * Update or create a user address and corresponding postal code.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.updateUserAddress = async (req, res) => {
-    const userId = req.userId;  // from middleware
+    const userId = req.userId; // from middleware
     const { street, streetNumber, postalCode, locality, country } = req.body;
-    
+
     const t = await db.sequelize.transaction();
-    
+    let postalCodeRecord;
+
+    console.log(street, streetNumber, postalCode, locality, country);
+
     try {
-        // First, check if all address fields are provided or if all are empty
-        const addressFields = [street, streetNumber, postalCode];
-        const allFieldsProvided = addressFields.every(field => field);
-        const noFieldsProvided = addressFields.every(field => !field);
-        
-        if (!allFieldsProvided && !noFieldsProvided) {
+        let errorFields = [];
+
+        // Validate that street and street number are provided together or not at all
+        if ((street !== undefined && streetNumber === undefined) || (street === undefined && streetNumber !== undefined)) {
+            if (street === undefined) errorFields.push('street');
+            if (streetNumber === undefined) errorFields.push('streetNumber');
             await t.rollback();
-            return res.status(400).json({ message: "All address fields must be provided together or none at all." });
+            return res.status(400).json({ message: "Both street and street number must be provided together.", missingFields: errorFields });
         }
-        
-        // Handle updates or creation of address details
+
+        // Validate that postal code, locality, and country are provided together or not at all
+        if ((postalCode !== undefined && (locality === undefined || country === undefined)) ||
+            (postalCode === undefined && (locality !== undefined || country !== undefined))) {
+            if (postalCode === undefined) errorFields.push('postalCode');
+            if (locality === undefined) errorFields.push('locality');
+            if (country === undefined) errorFields.push('country');
+            await t.rollback();
+            return res.status(400).json({ message: "Postal code, locality, and country must be provided together.", missingFields: errorFields });
+        }
+
+        // Find user
         const user = await User.findByPk(userId, { transaction: t });
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found." });
         }
-        
-        if (allFieldsProvided) {
-            // Verify that locality and country are provided when postal code is involved
-            if (!locality || !country) {
-                await t.rollback();
-                return res.status(400).json({ message: "Both locality and country must be provided with postal code." });
-            }
-            
-            // Check for existing postal code or create new one
-            let postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
+
+        // Update street and street number if provided
+        if (street !== undefined && streetNumber !== undefined) {
+            user.street = street;
+            user.streetNumber = streetNumber;
+        } else if (street === undefined && streetNumber === undefined) {
+            console.log('Street and street number are not provided. Setting them to null.');
+            user.street = null;
+            user.streetNumber = null;
+        }
+
+        // Update postal code details if provided
+        if (postalCode !== undefined && locality !== undefined && country !== undefined) {
+            postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
             if (!postalCodeRecord) {
                 postalCodeRecord = await PostalCode.create({ postalCode, locality, country }, { transaction: t });
             } else {
                 await postalCodeRecord.update({ locality, country }, { transaction: t });
             }
-            
-            // Update user's address fields
-            await user.update({ street, streetNumber, postalCode }, { transaction: t });
-        } else {
-            // If no fields are provided and user intends to clear address, reset the fields
-            await user.update({ street: null, streetNumber: null, postalCode: null }, { transaction: t });
+            user.postalCode = postalCode;
+        } else if (postalCode === undefined && locality === undefined && country === undefined) {
+            user.postalCode = null;
         }
-        
+
+        // Commit the transaction and save user details
+        await user.save({ transaction: t });
         await t.commit();
+
         return res.status(200).json({
             message: "User address updated successfully",
             user: {
@@ -726,7 +822,7 @@ exports.updateUserAddress = async (req, res) => {
                 country: postalCodeRecord ? postalCodeRecord.country : null
             }
         });
-        
+
     } catch (error) {
         await t.rollback();
         if (error instanceof ValidationError) {
@@ -739,6 +835,10 @@ exports.updateUserAddress = async (req, res) => {
         return res.status(500).json({ message: "Error updating user address", error: error.message });
     }
 };
+
+
+
+
     
 // Session validation to verify active user sessions
 exports.validateSession = (req, res) => {
@@ -788,7 +888,7 @@ exports.getUserSettings = async (req, res) => {
 
 async function fetchProfileSettings(userId) {
     const userProfile = await db.User.findByPk(userId, {
-        attributes: ['username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
+        attributes: ['userId','username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
             'street','streetNumber', 'postalCode',
          ],
         include: [
@@ -802,11 +902,13 @@ async function fetchProfileSettings(userId) {
     if (!userProfile) {
         throw new Error('User not found');
     }
-    console.log(userProfile);
+
     // Construct a response object
     return {
+/*         
         username: userProfile.username,
-        email: userProfile.email,
+        email: userProfile.email, */
+        userId: userProfile.userId,
         profileImage: userProfile.profileImage,
         about: userProfile.about,
         defaultLanguage: userProfile.defaultLanguage,
@@ -814,8 +916,8 @@ async function fetchProfileSettings(userId) {
             streetName: userProfile.street,
             streetNumber: userProfile.streetNumber,
             postalCode: userProfile.postalCode,
-            locality: userProfile.postalCodeDetails?.locality,
-            country: userProfile.postalCodeDetails?.country
+            locality: userProfile.postalCodeDetails?.locality ? userProfile.postalCodeDetails.locality : null,
+            country: userProfile.postalCodeDetails?.country ? userProfile.postalCodeDetails.country : null
         },
         showCity: userProfile.showCity
     };
@@ -982,35 +1084,34 @@ exports.updateUserSettings = async (req, res) => {
     const type = req.query.type;
     
     try {
+        let updateResult;
         switch (type) {
             case 'profile':
-                const profileUpdateData = await updateProfileSettings(userId, req.body);
-                res.status(200).json(profileUpdateData);
+                updateResult = await updateProfileSettings(userId, req.body);
                 break;
             case 'account':
-                const accountUpdateData = await updateAccountSettings(userId, req.body, res);
-                res.status(200).json(accountUpdateData);
+                updateResult = await updateAccountSettings(userId, req.body);
                 break;
             case 'notifications':
-                const notificationsUpdateData = await updateNotificationSettings(userId, req.body);
-                res.status(200).json(notificationsUpdateData);
+                updateResult = await updateNotificationSettings(userId, req.body);
                 break;
             case 'privacy':
-                const privacyUpdateData = await updatePrivacySettings(userId, req.body);
-                res.status(200).json(privacyUpdateData);
+                updateResult = await updatePrivacySettings(userId, req.body);
                 break;
             default:
-                res.status(400).json({ message: "Invalid settings type specified" });
-                break;
+                return res.status(400).json({ message: "Invalid settings type specified" });
         }
+
+        return res.status(updateResult.status).json(updateResult.data);
     } catch (error) {
         console.error('Error updating user settings', error);
-        res.status(500).json({ message: "Error updating settings", error: error.message });
+        return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
 };
 
 async function updateProfileSettings(userId, body) {
     const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
+    console.log(body)
     const t = await db.sequelize.transaction();
 
     try {
@@ -1030,15 +1131,15 @@ async function updateProfileSettings(userId, body) {
         }, { transaction: t });
 
         await t.commit();
-        return {
-            message: "User profile updated successfully",
+        return {status: 400,
+            data: {message: "User profile updated successfully",
             user: {
                 about: user.about,
                 defaultLanguage: user.defaultLanguage,
                 showCity: user.showCity,
                 // profileImage: user.profileImage
             }
-        };
+        }};
     } catch (error) {
         await t.rollback();
         if (error instanceof ValidationError) {
@@ -1049,14 +1150,11 @@ async function updateProfileSettings(userId, body) {
     }
 }
 
-// Update user account settings
-async function updateAccountSettings(userId, body, res) {
-    const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
 
-    // Validate presence of password fields
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        return { status: 400, data: { message: "All password fields must be provided." } };
-    }
+// Update user account settings
+async function updateAccountSettings(userId, body) {
+    const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
+    console.log('updateAccountSettings', body);
 
     let transaction;
 
@@ -1069,67 +1167,246 @@ async function updateAccountSettings(userId, body, res) {
             return { status: 404, data: { message: "User not found." } };
         }
 
-        // Validate current password
-        if (!(await user.validPassword(currentPassword))) {
-            await transaction.rollback();
-            return { status: 401, data: { message: "Invalid current password." } };
-        }
+        // Collect validation errors
+        const validationErrors = [];
         
-        // Validate new password confirmation
-        if (newPassword !== confirmPassword) {
-            await transaction.rollback();
-            return { status: 400, data: { message: "New passwords do not match." } };
+        if (!email) {
+            validationErrors.push({ message: "Email cannot be null or empty!", field: 'email' });
+        }
+        if (!username) {
+            validationErrors.push({ message: "Username cannot be null or empty!", field: 'username' });
+        }
+        if (!birthdayDate) {
+            validationErrors.push({ message: "Birth date cannot be null or empty!", field: 'birthDate' });
         }
 
-        // Update the user's password and mark as changed
-        user.password = newPassword;
-        user.changed('password', true);
+        if (validationErrors.length > 0) {
+            return { status: 400, data: { message: "Validation errors occurred.", errors: validationErrors } };
+        }
+
+        // Check if the update includes password changes
+        if (currentPassword || newPassword || confirmPassword) {
+            // Validate presence of password fields
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                await transaction.rollback();
+                return { status: 400, data: { message: "All password fields must be provided.", errors: [{ message: "All password fields must be provided.", field: 'password' }] } };
+            }
+
+            // Validate current password
+            if (!(await user.validPassword(currentPassword))) {
+                await transaction.rollback();
+                return { status: 401, data: { message: "Invalid current password.", errors: [{ message: "Invalid current password.", field: 'currentPassword' }] } };
+            }
+
+            // Validate new password confirmation
+            if (newPassword !== confirmPassword) {
+                await transaction.rollback();
+                return { status: 400, data: { message: "New passwords do not match.", errors: [{ message: "New passwords do not match.", field: 'newPassword' }] } };
+            }
+
+            // Update the user's password and mark as changed
+            user.password = newPassword;
+            user.changed('password', true);
+            
+            // Invalidate all sessions due to password change
+            await logoutUserSessions(userId, transaction);
+        }
 
         let isEmailChanged = email && email !== user.email;
         const updateData = {
-            email: email || user.email,
-            username: username || user.username,
-            name: name || user.name,
-            birthDate: birthdayDate || user.birthDate,
-            holidayMode: holidayMode !== undefined ? holidayMode : user.holidayMode,
+            email,
+            username,
+            name,
+            birthDate: birthdayDate,
+            holidayMode,
             isVerified: !isEmailChanged ? user.isVerified : false
         };
 
-        // Save changes
-        await user.save({ transaction });
+        // Update user details with validation
+        await user.update(updateData, { transaction, validate: true });
 
-        if (newPassword) {
-            // Invalidate all sessions due to password change
-            await logoutUserSessions(userId, transaction);
-            res.clearCookie('accessToken');
-            res.clearCookie('refreshToken');
-        }
-
+        // Send verification email if email changed
         if (isEmailChanged) {
             sendVerificationEmail(user.email);
         }
 
         await transaction.commit();
+
         return {
-            message: "User account updated successfully",
-            user: {
-                email: user.email,
-                username: user.username,
-                name: user.name,
-                birthdayDate: user.birthDate,
-                holidayMode: user.holidayMode,
-                isVerified: user.isVerified
+            status: 200,
+            data: {
+                message: "User account updated successfully",
+                user: {
+                    email: user.email,
+                    username: user.username,
+                    name: user.name,
+                    birthDate: user.birthDate,
+                    holidayMode: user.holidayMode,
+                    isVerified: user.isVerified
+                }
             }
         };
     } catch (error) {
         if (transaction) await transaction.rollback();
         console.error("Error during the transaction:", error);
+        if (error instanceof ValidationError) {
+            return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => ({ message: e.message, field: e.path })) } };
+        }
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
+    }
+}
+// Helper function to update notification settings for a user
+async function updateNotificationSettings(userId, settings) {
+    let transaction;
+    try {
+        transaction = await db.sequelize.transaction();
+        console.log(settings);
+
+        // Extract the notifications object from settings
+        const notificationSettings = settings.notifications;
+        if (!notificationSettings) {
+            throw new Error("Notification settings not provided");
+        }
+
+        for (const [configKey, configValue] of Object.entries(notificationSettings)) {
+            console.log(typeof configKey); // Should be string
+            console.log(configValue); // Should be the value of the configKey
+
+            // First, fetch the corresponding configuration ID
+            const config = await db.Configuration.findOne({
+                where: {
+                    configKey: configKey,
+                    configType: 'notifications'
+                }
+            });
+
+            // Throw an error if the configuration key is invalid (does not exist in the database)
+            if (!config) {
+                throw new Error(`Invalid config key: ${configKey}`);
+            }
+
+            // Convert the configValue to a string
+            const configValueStr = String(configValue);
+
+            // Check if the user configuration entry exists
+            const userConfig = await db.UserConfiguration.findOne({
+                where: {
+                    userId: userId,
+                    configId: config.configId
+                },
+                transaction: transaction
+            });
+
+            if (userConfig) {
+                // Update the existing user configuration entry
+                await db.UserConfiguration.update({
+                    configValue: configValueStr
+                }, {
+                    where: {
+                        userId: userId,
+                        configId: config.configId
+                    },
+                    transaction: transaction
+                });
+            } else {
+                // Insert a new user configuration entry
+                await db.UserConfiguration.create({
+                    userId: userId,
+                    configId: config.configId,
+                    configValue: configValueStr
+                }, {
+                    transaction: transaction
+                });
+            }
+        }
+
+        await transaction.commit();
+        return { message: "Notification settings updated successfully" };
+    } catch (error) {
+        // Rollback the transaction in case of an error
+        if (transaction) await transaction.rollback();
+        console.error("Error updating notification settings", error);
+        throw new Error("Failed to update notification settings");
+    }
+}
+
+// Helper function to update privacy settings for a user
+async function updatePrivacySettings(userId, settings) {
+    let transaction;
+    try {
+        transaction = await db.sequelize.transaction();
+        console.log(settings);
+
+        // Extract the privacy object from settings
+        const privacySettings = settings.privacy;
+        if (!privacySettings) {
+            throw new Error("Privacy settings not provided");
+        }
+
+        for (const [configKey, configValue] of Object.entries(privacySettings)) {
+            console.log(typeof configKey); // Should be string
+            console.log(configValue); // Should be the value of the configKey
+
+            // First, fetch the corresponding configuration ID
+            const config = await db.Configuration.findOne({
+                where: {
+                    configKey: configKey,
+                    configType: 'privacy'
+                }
+            });
+
+            // Throw an error if the configuration key is invalid (does not exist in the database)
+            if (!config) {
+                throw new Error(`Invalid config key: ${configKey}`);
+            }
+
+            // Convert the configValue to a string
+            const configValueStr = String(configValue);
+
+            // Check if the user configuration entry exists
+            const userConfig = await db.UserConfiguration.findOne({
+                where: {
+                    userId: userId,
+                    configId: config.configId
+                },
+                transaction: transaction
+            });
+
+            if (userConfig) {
+                // Update the existing user configuration entry
+                await db.UserConfiguration.update({
+                    configValue: configValueStr
+                }, {
+                    where: {
+                        userId: userId,
+                        configId: config.configId
+                    },
+                    transaction: transaction
+                });
+            } else {
+                // Insert a new user configuration entry
+                await db.UserConfiguration.create({
+                    userId: userId,
+                    configId: config.configId,
+                    configValue: configValueStr
+                }, {
+                    transaction: transaction
+                });
+            }
+        }
+
+        await transaction.commit();
+        return { message: "Privacy settings updated successfully" };
+    } catch (error) {
+        // Rollback the transaction in case of an error
+        if (transaction) await transaction.rollback();
+        console.error("Error updating privacy settings", error);
+        throw new Error("Failed to update privacy settings");
     }
 }
 
 // Logout from all sessions globally
-async function logoutUserSessions(userId, transaction) {
+exports.logoutUserSessions = async (userId, transaction) => {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
         // Invalidate all session logs for the user
@@ -1166,87 +1443,17 @@ function sendVerificationEmail(email) {
     // email sending logic here
 }
 
-// Helper function to update notification settings for a user
-async function updateNotificationSettings(userId, settings) {
-    let transaction;
-    try {
-        transaction = await db.sequelize.transaction();
 
-        // Iterate over the settings provided in the request body
-        for (const [configKey, configValue] of Object.entries(settings)) {
-            // First, fetch the corresponding configuration ID
-            const config = await Configuration.findOne({
-                where: {
-                    configKey: configKey,
-                    configType: 'notifications'
-                }
-            });
 
-            // Throw an error if the configuration key is invalid (does not exist in the database)
-            if (!config) {
-                throw new Error(`Invalid config key: ${configKey}`);
-            }
 
-            // Update the user's configuration value
-            await UserConfiguration.update({
-                configValue: configValue
-            }, {
-                where: {
-                    userId: userId,
-                    configId: config.configId
-                },
-                transaction: transaction
-            });
-        }
 
-        await transaction.commit();
-        return { message: "Notification settings updated successfully" };
-    } catch (error) {
-        // Rollback the transaction in case of an error
-        if (transaction) await transaction.rollback();
-        console.error("Error updating notification settings", error);
-        throw new Error("Failed to update notification settings");
-    }
-}
-
-// Helper function to update privacy settings for a user
-async function updatePrivacySettings(userId, settings) {
-    let transaction;
-    try {
-        transaction = await db.sequelize.transaction();
-
-        for (const [configKey, configValue] of Object.entries(settings)) {
-            const config = await db.Configuration.findOne({
-                where: { configKey, configType: 'privacy' }
-            });
-
-            if (!config) {
-                throw new Error(`Invalid config key: ${configKey}`);
-            }
-
-            const result = await db.UserConfiguration.upsert({
-                userId: userId,
-                configId: config.configId,
-                configValue: configValue
-            }, { transaction: transaction });
-
-            console.log(`Update result for ${configKey}:`, result);
-        }
-
-        await transaction.commit();
-        return { message: "Privacy settings updated successfully" };
-    } catch (error) {
-        if (transaction) await transaction.rollback();
-        console.error("Error updating privacy settings", error);
-        return { message: "Failed to update privacy settings", error: error.message || error.toString() };
-    }
-}
 
 // Follow another user
 exports.followUser = async (req, res) => {
+
     const { targetUserId } = req.body;
     const userId = req.userId;
-
+    console.log(`following ${targetUserId}`)
     if (userId == targetUserId) {
         return res.status(400).json({ message: "Cannot follow yourself." });
     }
@@ -1257,14 +1464,15 @@ exports.followUser = async (req, res) => {
             return res.status(404).json({ message: "User not found!" });
         }
 
-        const [followRelationship, created] = await db.FollowRelationship.findOrCreate({
+        const [followRelationship, created] = await db.FollowRelationship.findCreateFind({
             where: { mainUserId: userId, followedUserId: targetUserId }
         });
 
+        console.log(followRelationship, created);
         if (!created) {
             return res.status(400).json({ message: "Already following this user." });
         }
-
+      
         res.status(200).json({ message: 'User followed successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error following user', error: error.message });
@@ -1318,43 +1526,77 @@ exports.removeFollower = async (req, res) => {
     }
 };
 
+
 // Lists the users that the specified user is following.
 exports.listFollowing = async (req, res) => {
     const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const userId = req.userId; // Assuming this is set by your middleware
+
+    console.log('Listing following for user ' + id);
+    console.log('userId', userId);
 
     try {
-        // Fetch the user's privacy setting for their following list
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 14 },
             attributes: ['configValue']
         });
 
-        // If the user's following list is private, return an error
-        if (!privacy || privacy.configValue!== 'true') {
+        if (!privacy || privacy.configValue !== 'true') {
             return res.status(403).json({ message: "The user's following list is private." });
         }
 
-        // Fetch the users that the specified user is following
-        const following = await db.FollowRelationship.findAll({
+        const offset = (page - 1) * parseInt(limit);
+
+        console.log('Executing following query');
+        const following = await db.FollowRelationship.findAndCountAll({
             where: { mainUserId: id },
             include: {
                 model: db.User,
                 as: 'FollowedUser',
                 attributes: ['userId', 'username', 'profileImage']
-            }
+            },
+            limit: parseInt(limit), 
+            offset: parseInt(offset), 
+            logging: console.log 
         });
 
-        // Return the list of users the specified user is following
-        res.status(200).json(following);
+        console.log('Following query result:', following);
+
+        // Check follow relationships and order the result
+        const rows = await Promise.all(following.rows.map(async (relationship) => {
+            let isFollowing = false;
+            if (userId) {
+                isFollowing = await db.FollowRelationship.findOne({
+                    where: { mainUserId: userId, followedUserId: relationship.FollowedUser.userId }
+                });
+            }
+            return {
+                ...relationship.dataValues,
+                isFollowing: !!isFollowing,
+                isCurrentUser: relationship.FollowedUser.userId ? relationship.FollowedUser.userId === userId : false
+            };
+        }));
+
+        res.status(200).json({
+            count: following.count,
+            rows: rows
+        });
     } catch (error) {
-        // If there is an issue retrieving the following list, return an error
+        console.error('Error retrieving following list:', error);
         res.status(500).json({ message: 'Error retrieving following list', error: error.message });
     }
 };
 
+// Lists the users that are following the specified user.
 exports.listFollowers = async (req, res) => {
     const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const userId = req.userId; 
 
+    console.log('Listing followers for user ' + id);
+    console.log('userId', userId);
+    
     try {
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 15 },
@@ -1365,20 +1607,49 @@ exports.listFollowers = async (req, res) => {
             return res.status(403).json({ message: "The user's followers list is private." });
         }
 
-        const followers = await db.FollowRelationship.findAll({
+        const offset = (page - 1) * parseInt(limit);
+
+        console.log('Executing followers query');
+        const followers = await db.FollowRelationship.findAndCountAll({
             where: { followedUserId: id },
             include: {
                 model: db.User,
                 as: 'MainUser',
                 attributes: ['userId', 'username', 'profileImage']
-            }
+            },
+            limit: parseInt(limit), 
+            offset: parseInt(offset), 
+            logging: console.log 
         });
 
-        res.status(200).json(followers);
+        console.log('Followers query result:', followers);
+
+        // Check follow relationships and order the result
+        const rows = await Promise.all(followers.rows.map(async (relationship) => {
+            let isFollowing = false;
+            if (userId) {
+                isFollowing = await db.FollowRelationship.findOne({
+                    where: { mainUserId: userId, followedUserId: relationship.MainUser.userId }
+                });
+            }
+            return {
+                ...relationship.dataValues,
+                isFollowing: !!isFollowing,
+                isCurrentUser: relationship.MainUser.userId === userId
+            };
+        }));
+
+        res.status(200).json({
+            count: followers.count,
+            rows: rows
+        });
     } catch (error) {
+        console.error('Error retrieving followers list:', error);
         res.status(500).json({ message: 'Error retrieving followers list', error: error.message });
     }
 };
+
+
 
 // Block another user
 exports.blockUser = async (req, res) => {
@@ -1724,6 +1995,7 @@ exports.deleteEntries = async (req, res) => {
 
 // Get user's favorite genres
 exports.getFavoriteGenres = async (req, res) => {
+    console.log("Fetching favorite genres for user", req.userId);
     try {
         const userId = req.userId;
         const favoriteGenres = await UserFavoriteGenre.findAll({
@@ -1742,32 +2014,33 @@ exports.addFavoriteGenre = async (req, res) => {
     try {
         const userId = req.userId;
         const { genreName } = req.body;
-
+        console.log("Adding favorite genre", genreName);
         // Check if the genre exists
         const genre = await Genre.findOne({ where: { genreName } });
         if (!genre) {
-            return res.status(404).json({ message: 'Genre not found' });
+            return res.status(404).json({ success: false,  message: 'Genre not found' });
         }
 
         // Check if the user already has 5 favorite genres
         const favoriteCount = await UserFavoriteGenre.count({ where: { userId } });
         if (favoriteCount >= 5) {
-            return res.status(400).json({ message: 'You can only have up to 5 favorite genres' });
+            return res.status(400).json({  success: false, message: 'You can only have up to 5 favorite genres' });
         }
 
         // Check if the genre is already a favorite
         const existingFavorite = await UserFavoriteGenre.findOne({ where: { userId, genreId: genre.genreId } });
         if (existingFavorite) {
-            return res.status(400).json({ message: 'Genre is already a favorite' });
+            return res.status(400).json({ success: false, message: 'Genre is already a favorite' });
         }
 
         const favoriteGenre = await UserFavoriteGenre.create({ userId, genreId: genre.genreId });
-        res.status(201).json({ message: `Genre '${genreName}' added to favorites` });
+        res.status(201).json({  success: true , message: `Genre '${genreName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite genre:", error);
-        res.status(500).json({ message: 'Error adding favorite genre', error: error.message });
+        res.status(500).json({  success: false, message: 'Error adding favorite genre', error: error.message });
     }
 };
+
 
 // Remove a favorite genre
 exports.removeFavoriteGenre = async (req, res) => {
@@ -1780,22 +2053,25 @@ exports.removeFavoriteGenre = async (req, res) => {
         });
 
         if (!favoriteGenre) {
-            return res.status(404).json({ message: 'Favorite genre not found' });
+            return res.status(404).json({  success: false, message: 'Favorite genre not found' });
         }
 
-        res.status(200).json({ message: 'Favorite genre removed successfully' });
+        res.status(200).json({ success: true, message: 'Favorite genre removed successfully' });
     } catch (error) {
         console.error("Error removing favorite genre:", error);
-        res.status(500).json({ message: 'Error removing favorite genre', error: error.message });
+        res.status(500).json({  success: false, message: 'Error removing favorite genre', error: error.message });
     }
 };
 
+
 // Get user's favorite authors
 exports.getFavoriteAuthors = async (req, res) => {
+    console.log('Fetching favorite authors for user', req.userId);
     try {
         const userId = req.userId;
         const favoriteAuthors = await UserFavoriteAuthor.findAll({
             where: { userId },
+            attributes: [],
             include: [{ model: Person, attributes: ['personId', 'personName'] }]
         });
         res.status(200).json(favoriteAuthors);
@@ -1805,14 +2081,32 @@ exports.getFavoriteAuthors = async (req, res) => {
     }
 };
 
-// Add a favorite author
+
+/**
+ * Add a favorite author for a user.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.addFavoriteAuthor = async (req, res) => {
     try {
         const userId = req.userId;
         const { personName } = req.body;
 
-        // Check if the person exists and is an author
-        const person = await Person.findOne({ where: { personName, roles: { [Op.like]: '%author%' } } });
+        // Check if the person exists and has the 'author' role
+        const person = await Person.findOne({
+            where: { personName },
+            include: {
+                model: PersonRole,
+                attributes: [],
+                include: {
+                    model: Role,
+                    where: { roleName: 'author' }
+                },
+            }
+        });
+
         if (!person) {
             return res.status(404).json({ message: 'Author not found' });
         }
@@ -1829,31 +2123,39 @@ exports.addFavoriteAuthor = async (req, res) => {
             return res.status(400).json({ message: 'Author is already a favorite' });
         }
 
-        const favoriteAuthor = await UserFavoriteAuthor.create({ userId, personId: person.personId });
-        res.status(201).json({ message: `Author '${personName}' added to favorites` });
+        // Add the author to the user's favorites
+        await UserFavoriteAuthor.create({ userId, personId: person.personId });
+        res.status(201).json({ success: true, message: `Author '${personName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite author:", error);
         res.status(500).json({ message: 'Error adding favorite author', error: error.message });
     }
 };
 
-// Remove a favorite author
+/**
+ * Remove a favorite author for a user.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<Object>} JSON response with success status and message
+ */
 exports.removeFavoriteAuthor = async (req, res) => {
     try {
         const userId = req.userId;
         const { personId } = req.params;
 
-        const favoriteAuthor = await UserFavoriteAuthor.destroy({
-            where: { userId, personId }
-        });
-
+        // Check if the favorite author entry exists
+        const favoriteAuthor = await UserFavoriteAuthor.findOne({ where: { userId, personId } });
         if (!favoriteAuthor) {
             return res.status(404).json({ message: 'Favorite author not found' });
         }
 
+        // Remove the favorite author entry
+        await UserFavoriteAuthor.destroy({ where: { userId, personId } });
         res.status(200).json({ message: 'Favorite author removed successfully' });
     } catch (error) {
         console.error("Error removing favorite author:", error);
         res.status(500).json({ message: 'Error removing favorite author', error: error.message });
     }
 };
+

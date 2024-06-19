@@ -58,7 +58,7 @@ exports.getUsersForDeletion = async (req, res) => {
                 isActiveStatus: 'to be deleted',
                 deletionScheduleDate: { [Op.lte]: today }
             },
-            attributes: ['userId', 'username', 'profileImage', 'deletionScheduleDate']
+            attributes: ['userId', 'username', 'profileImage', 'deletionScheduleDate', 'registrationDate']
         });
 
         console.log(`Users for deletion: ${JSON.stringify(users, null, 2)}`);
@@ -70,6 +70,32 @@ exports.getUsersForDeletion = async (req, res) => {
     }
 };
 
+exports.getSuspendedUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
+        const { count, rows } = await db.User.findAndCountAll({
+            where: {
+                isActiveStatus: 'suspended',
+            },
+            attributes: ['userId', 'username', 'profileImage', 'isActiveStatus', 'registrationDate'],
+            limit,
+            offset
+        });
+        const totalUsers = count;
+        const totalPages = Math.ceil(totalUsers / limit);
+
+        res.status(200).json({
+            data: rows,
+            currentPage: page,
+            totalPages,
+        });
+    } catch (error) {
+        console.error("Error fetching suspended users:", error);
+        res.status(500).json({ message: 'Error fetching suspended users', error: error.message });
+    }
+};
 
 // Delete a user's account
 exports.deleteUser = async (req, res) => {

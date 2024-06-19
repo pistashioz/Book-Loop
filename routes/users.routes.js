@@ -4,6 +4,7 @@ const usersController = require('../controllers/users.controller');
 const adminController = require('../controllers/admin.controller');
 const { verifyToken } = require('../middleware/authJwt');
 const { isAdmin } = require('../middleware/admin');
+const extractUserId = require('../middleware/extractUserId');
 
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
@@ -36,8 +37,8 @@ router.post('/me/follow', verifyToken, usersController.followUser);
 router.post('/me/block', verifyToken, usersController.blockUser);
 
 // Getting list of followers and followings
-router.get('/:id/following', usersController.listFollowing);
-router.get('/:id/followers', usersController.listFollowers);
+router.get('/:id/following', extractUserId, usersController.listFollowing);
+router.get('/:id/followers', extractUserId, usersController.listFollowers);
 
 // Unfollowing and unblocking
 router.delete('/me/following/:followedUserId', verifyToken, usersController.unfollowUser);
@@ -74,8 +75,12 @@ router.route('/')
 .get(usersController.findAll)
 .post(usersController.create);
 
+// Get users eligible for deletion
+router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
+router.get('/suspended-users', verifyToken, isAdmin, adminController.getSuspendedUsers)
+
 router.route('/:id')
-.get(usersController.findOne)
+.get(extractUserId, usersController.findOne)
 /*     .put(usersController.update)
 .delete(usersController.delete); */
 
@@ -84,14 +89,11 @@ router.post('/logout', verifyToken, usersController.logout);
 
 // Admin routes
 // Toggle suspension of a user (suspend/unsuspend)
-router.patch('/users/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
+router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
 
-// Get users eligible for deletion
-router.get('/users/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);
 
 // Delete a user
-router.delete('/users/:userId', verifyToken, isAdmin, adminController.deleteUser);
-
+router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
 
 
 // router.get('/validate-session', verifyToken, usersController.validateSession);

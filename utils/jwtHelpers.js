@@ -8,6 +8,8 @@ const config = require('../config/auth.config');
  */
 async function verifyTokenHelper(token) {
     return new Promise((resolve, reject) => {
+        console.log('Verifying token...');	
+        console.log('Token:', token);
         jwt.verify(token, config.secret, (err, decoded) => {
             if (err) {
                 console.log(err.name);	

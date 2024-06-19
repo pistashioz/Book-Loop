@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const { getEnumValues } = require('../utils/sequelizeHelpers');
 
-// Helper Functions
+/* // Helper Functions
 const validateAddressComplete = function(value, next) {
     if ((value !== undefined || this.street !== undefined || this.streetNumber !== undefined || this.postalCode !== undefined) && 
     !(this.street && this.streetNumber && this.postalCode)) {
@@ -9,7 +9,7 @@ const validateAddressComplete = function(value, next) {
     }
     next();
 };
-
+ */
 // User Model Definition
 module.exports = (sequelize, DataTypes) => {
     const User = sequelize.define('User', {
@@ -22,15 +22,13 @@ module.exports = (sequelize, DataTypes) => {
         username: {
             type: DataTypes.STRING,
             allowNull: false,
-            validate: { notNull: { msg: 'Username cannot be null or empty!' } }
         },
         profileImage: DataTypes.STRING(1000),
         email: {
             type: DataTypes.STRING,
             allowNull: false,
             validate: {
-                isEmail: { msg: 'Must be a valid email address' },
-                notNull: { msg: 'Email cannot be null or empty!' }
+                isEmail: { msg: 'Must be a valid email address' }
             }
         },
         isVerified: { type: DataTypes.BOOLEAN, defaultValue: false },
@@ -56,23 +54,20 @@ module.exports = (sequelize, DataTypes) => {
             defaultValue: 'active'
         },
         deletionScheduleDate: DataTypes.DATE,
-        street: { type: DataTypes.STRING, validate: { isComplete: validateAddressComplete } },
+        street: { type: DataTypes.STRING },
         streetNumber: {
             type: DataTypes.STRING,
             validate: {
                 isAlphanumeric: { msg: 'Street number must be alphanumeric' },
-                isComplete: validateAddressComplete
             }
         },
         postalCode: {
             type: DataTypes.STRING,
             references: { model: 'postalCode', key: 'postalCode' },
-            validate: { isComplete: validateAddressComplete }
         },
         showCity: { type: DataTypes.BOOLEAN, defaultValue: false },
         deliverByHand: { type: DataTypes.BOOLEAN, defaultValue: false },
         about: DataTypes.TEXT,
-        averageRating: { type: DataTypes.DECIMAL(3, 2), validate: { min: 0, max: 5 } },
         defaultLanguage: {
             type: DataTypes.ENUM('EN', 'PT-EU'),
             defaultValue: 'EN',

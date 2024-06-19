@@ -4,8 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+  "test": "jest --detectOpenHandles",
+      "test:tokens": "jest tests/unit/utils/tokens.test.js",
+    "test:authJwt": "jest tests/unit/middleware/authJwt.test.js",
+      "test:auth": "jest tests/integration/auth.test.js --detectOpenHandles",
+      "test:authLogout": "jest tests/integration/authLogout.test.js --detectOpenHandles",
+  "test:coverage": "jest --coverage --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +28,8 @@
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "supertest": "^7.0.0"
   }
 }

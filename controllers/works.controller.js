@@ -36,7 +36,7 @@ exports.findAll = async (req, res) => {
         // Extract query parameters
         const { 
             page = 1, 
-            limit = 10, 
+            limit = 11, 
             genres, 
             authors, 
             startDate, 
@@ -2396,7 +2396,7 @@ exports.likeReview = async (req, res) => {
     try {
         const { workId, literaryReviewId } = req.params;
         const userId = req.userId;
-
+        console.log(`liking review ${literaryReviewId} for work ${workId} for user ${userId}`)
         // Validate parameters
         if (!workId || !literaryReviewId) {
             return res.status(400).json({ 

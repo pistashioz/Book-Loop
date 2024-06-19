@@ -1,10 +1,10 @@
 const dbConfig = require('../config/db.config');
 const { Sequelize, DataTypes } = require('sequelize');
 
-// Initialize Sequelize with parameters from the config file.
 const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
     host: dbConfig.HOST,
     dialect: dbConfig.dialect,
+    dialectOptions: dbConfig.dialectOptions,
     pool: {
         max: dbConfig.pool.max,
         min: dbConfig.pool.min,
@@ -25,7 +25,7 @@ sequelize.authenticate()
     .catch(err => {
         console.error('Unable to connect to the database:', err);
     });
-
+    
 const db = {};
 db.sequelize = sequelize;
 // Load models
