@@ -221,6 +221,10 @@ exports.findListingById = async (req, res) => {
         const listing = await Listing.findByPk(listingId, {
             include: [
                 {
+                    model: ListingImage,
+                    attributes: ['imageUrl'],
+                },
+                {
                     model: User,
                     attributes: ['userId', 'username', 'profileImage', 'showCity', 'postalCode', 'sellerAverageRating'],
                     include: {
@@ -306,6 +310,7 @@ exports.findListingById = async (req, res) => {
             listingDate: listing.listingDate,
             listingCondition: listing.listingCondition,
             availability: listing.availability,
+            listingImages: listing.ListingImages.map(li => li.imageUrl),
             seller: {
                 username: seller.username,
                 profileImage: seller.profileImage,
