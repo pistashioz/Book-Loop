@@ -13,8 +13,8 @@ const config = {
         pool: {
             max: 5,
             min: 0,
-            acquire: 50000,
-            idle: 30000
+            acquire: 80000,
+            idle: 60000
         }
     },
     test: {
