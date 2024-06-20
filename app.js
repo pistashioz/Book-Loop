@@ -99,7 +99,7 @@ module.exports = app;
 
 // Only start the server if not in test environment
 if (require.main === module) {
-  app.listen(port,() => {
+  app.listen(process.env.PORT ,() => {
     console.log(`Server running `);
   });
 }

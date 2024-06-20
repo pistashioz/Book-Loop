@@ -1736,6 +1736,11 @@ exports.blockUser = async (req, res) => {
 exports.unblockUser = async (req, res) => {
     const { blockedUserId } = req.params;
     const userId = req.userId;
+    
+    const userExists = await User.findByPk(blockedUserId);
+    if (!userExists) {
+        return res.status(404).json({ message: "User not found." });
+    }
 
     const block = await db.Block.findOne({
         where: { blockerUserId: userId, blockedUserId }
