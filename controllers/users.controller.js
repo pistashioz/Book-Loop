@@ -422,15 +422,18 @@ exports.delete = async (req, res) => {
     }
 }; */
     
-
-// Helper function to create a token entry in the token table
-async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false) {
-    const t = await db.sequelize.transaction();
+async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false, transaction) {
     try {
+        console.log('Creating token entry with invalidateOldToken:', invalidateOldToken);
+
         if (invalidateOldToken) {
-            await Token.update({ invalidated: true, lastUsedAt: new Date() },
-                               { where: { sessionId: sessionId, invalidated: false }, transaction: t });
+            console.log('Invalidating old tokens for sessionId:', sessionId);
+            await Token.update(
+                { invalidated: true, lastUsedAt: new Date() },
+                { where: { sessionId: sessionId, invalidated: false }, transaction: transaction }
+            );
         }
+
         await Token.create({
             tokenKey,
             tokenType,
@@ -438,14 +441,13 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
             sessionId,
             expiresAt: expires,
             invalidated: false
-        }, { transaction: t });
-        await t.commit();
+        }, { transaction: transaction });
     } catch (error) {
-        await t.rollback();
         console.error("Failed to create token entry:", error);
         throw error;
     }
 }
+
 
 // Helper function to set cookies for refresh token and access token
 exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) =>{
@@ -471,9 +473,7 @@ exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshTok
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
 
-// Login action for user
 exports.login = async (req, res) => {
-    console.log('inside login action')
     const { usernameOrEmail, password, reactivate } = req.body;
     let t;
     try {
@@ -483,11 +483,12 @@ exports.login = async (req, res) => {
             where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
             transaction: t
         });
+
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found" });
         }
-        
+
         if (!reactivate && (user.isActiveStatus === 'deactivated' || 
         (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
             await t.rollback();
@@ -496,19 +497,20 @@ exports.login = async (req, res) => {
                 actionRequired: false
             });
         }
-        
+
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
             await t.rollback();
             return res.status(401).json({ message: "Invalid username or password" });
         }
-        
+
         const existingSession = await SessionLog.findOne({
             where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
             transaction: t
         });
 
         if (existingSession) {
+            console.log('Existing session found, ending it for sessionId:', existingSession.sessionId);
             await SessionLog.update(
                 { endTime: new Date() },
                 { where: { sessionId: existingSession.sessionId }, transaction: t }
@@ -518,24 +520,25 @@ exports.login = async (req, res) => {
                 { where: { sessionId: existingSession.sessionId, invalidated: false }, transaction: t }
             );
         }
-        
+
         const sessionLog = await SessionLog.create({
             userId: user.userId,
             startTime: new Date(),
             ipAddress: req.ip,
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
-        
+
         const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
-        
-        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, { transaction: t });
-        
-        console.log(`access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
-        console.log(`refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
+
+        // Passando a transação `t` para a função `createTokenEntry`
+        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, false, t);
+
+        console.log(`Access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
+        console.log(`Refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
 
         this.setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
-        
+
         if (reactivate) {
             await User.update({
                 isActiveStatus: 'active',
@@ -545,7 +548,7 @@ exports.login = async (req, res) => {
                 transaction: t
             });
         }
-        
+
         await t.commit();
         res.status(200).json({
             message: "Login successful",
@@ -557,6 +560,7 @@ exports.login = async (req, res) => {
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
 };
+
 
 
 

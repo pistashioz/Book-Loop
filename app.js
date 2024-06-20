@@ -10,7 +10,7 @@ require('dotenv').config(); // Load environment variables from .env file at the 
 const app = express();
 
 // Configure host and port from environment variables or use defaults
-const PORT = process.env.PORT ;
+const port = process.env.PORT || 4000;
 
 const corsOptions = {
   origin: 'http://localhost:3000',
@@ -99,7 +99,7 @@ module.exports = app;
 
 // Only start the server if not in test environment
 if (require.main === module) {
-  app.listen(PORT,() => {
+  app.listen(port,() => {
     console.log(`Server running `);
   });
 }
