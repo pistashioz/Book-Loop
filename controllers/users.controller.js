@@ -807,7 +807,7 @@ exports.updateUserAddress = async (req, res) => {
                 await postalCodeRecord.update({ locality, country }, { transaction: t });
             }
             user.postalCode = postalCode;
-        } else if (postalCode === undefined && locality === undefined && country === undefined) {
+        } else if (postalCode === null) {
             user.postalCode = null;
         }
 
