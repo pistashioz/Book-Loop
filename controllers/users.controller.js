@@ -1503,21 +1503,32 @@ exports.unfollowUser = async (req, res) => {
     const { followedUserId } = req.params;
     const userId = req.userId;
 
-    const relationship = await db.FollowRelationship.findOne({
-        where: { mainUserId: userId, followedUserId }
-    });
-
-    if (!relationship) {
-        return res.status(400).json({ message: "Not currently following this user." });
-    }
-
+    const t = await db.sequelize.transaction();
     try {
-        await relationship.destroy();
+        const relationship = await db.FollowRelationship.findOne({
+            where: { mainUserId: userId, followedUserId },
+            transaction: t
+        });
+
+        if (!relationship) {
+            await t.rollback();
+            return res.status(400).json({ message: "Not currently following this user." });
+        }
+
+        await relationship.destroy({ transaction: t });
+        
+        await db.User.decrement('totalFollowers', { by: 1, where: { userId: followedUserId }, transaction: t });
+        await db.User.decrement('totalFollowing', { by: 1, where: { userId: userId }, transaction: t });
+
+        await t.commit();
         res.status(200).json({ message: 'Unfollowed successfully.' });
     } catch (error) {
+        await t.rollback();
+        console.error("Error unfollowing user:", error);
         res.status(500).json({ message: 'Error unfollowing user', error: error.message });
     }
 };
+
 
 // Remove a follower
 exports.removeFollower = async (req, res) => {
