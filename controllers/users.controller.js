@@ -792,14 +792,14 @@ exports.updateUserAddress = async (req, res) => {
         if (street !== undefined && streetNumber !== undefined) {
             user.street = street;
             user.streetNumber = streetNumber;
-        } else if (street === undefined && streetNumber === undefined) {
-            console.log('Street and street number are not provided. Setting them to null.');
+        } else if (street === null && streetNumber === null) {
+            console.log('Street and street number are set to null.');
             user.street = null;
             user.streetNumber = null;
         }
 
         // Update postal code details if provided
-        if (postalCode !== undefined && locality !== undefined && country !== undefined) {
+        if (postalCode !== null && postalCode !== undefined && locality !== undefined && country !== undefined) {
             postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
             if (!postalCodeRecord) {
                 postalCodeRecord = await PostalCode.create({ postalCode, locality, country }, { transaction: t });
