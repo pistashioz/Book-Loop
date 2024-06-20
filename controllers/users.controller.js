@@ -422,6 +422,7 @@ exports.delete = async (req, res) => {
     }
 }; */
     
+
 async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false, transaction) {
     try {
         console.log('Creating token entry with invalidateOldToken:', invalidateOldToken);
@@ -430,7 +431,7 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
             console.log('Invalidating old tokens for sessionId:', sessionId);
             await Token.update(
                 { invalidated: true, lastUsedAt: new Date() },
-                { where: { sessionId: sessionId, invalidated: false }, transaction: transaction }
+                { where: { sessionId: sessionId, invalidated: false }, transaction }
             );
         }
 
@@ -441,7 +442,7 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
             sessionId,
             expiresAt: expires,
             invalidated: false
-        }, { transaction: transaction });
+        }, { transaction });
     } catch (error) {
         console.error("Failed to create token entry:", error);
         throw error;
@@ -472,7 +473,6 @@ exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshTok
 
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
-
 exports.login = async (req, res) => {
     const { usernameOrEmail, password, reactivate } = req.body;
     let t;
@@ -531,7 +531,7 @@ exports.login = async (req, res) => {
         const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
 
-        // Passando a transação `t` para a função `createTokenEntry`
+        // Passar invalidateOldToken como false e a transação atual
         await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, false, t);
 
         console.log(`Access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
@@ -560,7 +560,6 @@ exports.login = async (req, res) => {
         res.status(500).json({ message: "Error logging in", error: error.message });
     }
 };
-
 
 
 
