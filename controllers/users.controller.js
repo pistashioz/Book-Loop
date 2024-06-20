@@ -1540,21 +1540,42 @@ exports.removeFollower = async (req, res) => {
         return res.status(400).json({ message: "Cannot remove yourself as a follower." });
     }
 
+    const t = await db.sequelize.transaction();
+
     try {
         const relationship = await db.FollowRelationship.findOne({
-            where: { mainUserId: followerUserId, followedUserId: userId }
+            where: { mainUserId: followerUserId, followedUserId: userId },
+            transaction: t
         });
 
         if (!relationship) {
+            await t.rollback();
             return res.status(404).json({ message: "This user is not following you." });
         }
 
-        await relationship.destroy();
+        await relationship.destroy({ transaction: t });
+
+        // Decrement the follower count for the user being followed
+        await db.User.decrement('totalFollowers', {
+            where: { userId: userId },
+            transaction: t
+        });
+
+        // Decrement the following count for the user who was following
+        await db.User.decrement('totalFollowing', {
+            where: { userId: followerUserId },
+            transaction: t
+        });
+
+        await t.commit();
+
         res.status(200).json({ message: 'Follower removed successfully.' });
     } catch (error) {
+        await t.rollback();
         res.status(500).json({ message: 'Error removing follower', error: error.message });
     }
 };
+
 
 
 // Lists the users that the specified user is following.
