@@ -1458,36 +1458,45 @@ function sendVerificationEmail(email) {
 
 
 
-// Follow another user
 exports.followUser = async (req, res) => {
-
     const { targetUserId } = req.body;
     const userId = req.userId;
-    console.log(`following ${targetUserId}`)
+    console.log(`following ${targetUserId}`);
     if (userId == targetUserId) {
         return res.status(400).json({ message: "Cannot follow yourself." });
     }
 
+    const t = await db.sequelize.transaction();
     try {
-        const userExists = await db.User.findByPk(targetUserId);
+        const userExists = await db.User.findByPk(targetUserId, { transaction: t });
         if (!userExists) {
+            await t.rollback();
             return res.status(404).json({ message: "User not found!" });
         }
 
-        const [followRelationship, created] = await db.FollowRelationship.findCreateFind({
-            where: { mainUserId: userId, followedUserId: targetUserId }
+        const [followRelationship, created] = await db.FollowRelationship.findOrCreate({
+            where: { mainUserId: userId, followedUserId: targetUserId },
+            defaults: { mainUserId: userId, followedUserId: targetUserId },
+            transaction: t
         });
 
-        console.log(followRelationship, created);
         if (!created) {
+            await t.rollback();
             return res.status(400).json({ message: "Already following this user." });
         }
-      
+
+        await db.User.increment('totalFollowers', { by: 1, where: { userId: targetUserId }, transaction: t });
+        await db.User.increment('totalFollowing', { by: 1, where: { userId: userId }, transaction: t });
+
+        await t.commit();
         res.status(200).json({ message: 'User followed successfully.' });
     } catch (error) {
+        await t.rollback();
+        console.error("Error following user:", error);
         res.status(500).json({ message: 'Error following user', error: error.message });
     }
 };
+
 
 // Unfollow a user
 exports.unfollowUser = async (req, res) => {
