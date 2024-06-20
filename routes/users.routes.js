@@ -16,6 +16,18 @@ router.use((req, res, next) => {
     next(); // Proceed to the next middleware or route handler
 });
 
+// Delete a user
+router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
+
+
+
+// Admin routes
+// Toggle suspension of a user (suspend/unsuspend)
+router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
+
+
+
+
 // Define specific routes for "me" to handle profile or settings access
 // router.get('/me', verifyToken, usersController.getMyProfile);
 router.route('/me/settings') 
@@ -86,14 +98,6 @@ router.route('/:id')
 
 router.post('/login', usersController.login);
 router.post('/logout', verifyToken, usersController.logout);
-
-// Admin routes
-// Toggle suspension of a user (suspend/unsuspend)
-router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension);
-
-
-// Delete a user
-router.delete('/:userId', verifyToken, isAdmin, adminController.deleteUser);
 
 
 // router.get('/validate-session', verifyToken, usersController.validateSession);
