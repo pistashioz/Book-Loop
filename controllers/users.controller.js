@@ -704,37 +704,34 @@ exports.initiateAccountDeletion = async (req, res) => {
     const deletionDate = new Date();
     deletionDate.setDate(deletionDate.getDate() + 30); // Set 30 days from now
 
-    let transaction;
-
+    const t = await sequelize.transaction();
+    
     try {
-        transaction = await db.sequelize.transaction();
-
-        const result = await db.User.update({
+        const result = await User.update({
             isActiveStatus: 'to be deleted',
             deletionScheduleDate: deletionDate
         }, {
             where: { userId: id },
-            transaction
+            transaction: t
         });
 
         if (result == 0) {
-            await transaction.rollback();
+            await t.rollback();
             return res.status(404).json({ message: "User not found." });
         }
 
         // Logout from all sessions
-        await this.logoutUserSessions(id, transaction);
+        await logoutUserSessions(id, t);
 
-        await transaction.commit();
+        await t.commit();
 
         res.status(200).json({ message: "Account deletion initiated. Account will be deleted after 30 days unless cancelled." });
     } catch (error) {
-        if (transaction) await transaction.rollback();
+        await t.rollback();
         console.error("Error initiating account deletion:", error);
         res.status(500).json({ message: "Error initiating account deletion", error: error.message });
     }
 };
-
 
 /**
  * Update or create a user address and corresponding postal code.

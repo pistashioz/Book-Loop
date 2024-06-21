@@ -1,11 +1,10 @@
-// tests/setup.js
+/* // tests/setup.js
 const { sequelize } = require('../models');
 
 let transaction;
 
 beforeAll(async () => {
   await sequelize.authenticate();
-  // await sequelize.sync({ force: true }); // Usar apenas se precisar sincronizar a estrutura do banco de dados
 });
 
 beforeEach(async () => {
@@ -21,3 +20,8 @@ afterEach(async () => {
 afterAll(async () => {
   await sequelize.close();
 });
+
+module.exports = {
+  getTransaction: () => transaction,
+};
+ */

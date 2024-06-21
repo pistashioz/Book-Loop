@@ -8,8 +8,7 @@ const config = {
         DB: process.env.DB_NAME,
         dialect: 'mysql',
         dialectOptions: {
-            charset: 'utf8mb4',
-            "rejectUnauthorized": false
+            charset: 'utf8mb4'
         },
         pool: {
             max: 5,
@@ -27,8 +26,7 @@ const config = {
         dialectOptions: {
             charset: 'utf8mb4',
             ssl: {
-                "require": true,
-                "rejectUnauthorized": false
+                "require": true
             },
         },
         pool: {
