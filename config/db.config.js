@@ -1,4 +1,4 @@
-const env = process.env.NODE_ENV || 'test';
+const env = process.env.NODE_ENV || 'development';
 
 const config = {
     development: {
