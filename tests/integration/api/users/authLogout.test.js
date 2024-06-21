@@ -1,12 +1,12 @@
 const request = require('supertest');
-const app = require('../../../app');
-const { SessionLog, Token, sequelize } = require('../../../models');
-const { verifyTokenHelper } = require('../../../utils/jwtHelpers');
-const { verifyToken } = require('../../../middleware/authJwt');
+const app = require('../../../../app');
+const { SessionLog, Token, sequelize } = require('../../../../models');
+const { verifyTokenHelper } = require('../../../../utils/jwtHelpers');
+const { verifyToken } = require('../../../../middleware/authJwt');
 
-jest.mock('../../../models');
-jest.mock('../../../middleware/authJwt');
-jest.mock('../../../utils/jwtHelpers');
+jest.mock('../../../../models');
+jest.mock('../../../../middleware/authJwt');
+jest.mock('../../../../utils/jwtHelpers');
 
 describe('Auth Logout Endpoint', () => {
   let server;

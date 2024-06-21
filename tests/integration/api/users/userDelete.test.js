@@ -1,12 +1,12 @@
 const request = require('supertest');
-const app = require('../../../app');
-const { User, SessionLog, Token, sequelize } = require('../../../models');
-const { verifyToken } = require('../../../middleware/authJwt');
-const { logoutUserSessions } = require('../../../controllers/users.controller');
+const app = require('../../../../app');
+const { User, SessionLog, Token, sequelize } = require('../../../../models');
+const { verifyToken } = require('../../../../middleware/authJwt');
+const { logoutUserSessions } = require('../../../../controllers/users.controller');
 
-jest.mock('../../../models');
-jest.mock('../../../middleware/authJwt');
-jest.mock('../../../controllers/users.controller');
+jest.mock('../../../../models');
+jest.mock('../../../../middleware/authJwt');
+jest.mock('../../../../controllers/users.controller');
 
 describe('PATCH /users/me/delete', () => {
     let server;

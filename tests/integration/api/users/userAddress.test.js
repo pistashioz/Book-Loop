@@ -1,10 +1,10 @@
 const request = require('supertest');
-const app = require('../../../app');
-const { User, PostalCode, sequelize } = require('../../../models');
-const { verifyToken } = require('../../../middleware/authJwt');
+const app = require('../../../../app');
+const { User, PostalCode, sequelize } = require('../../../../models');
+const { verifyToken } = require('../../../../middleware/authJwt');
 
-jest.mock('../../../models');
-jest.mock('../../../middleware/authJwt');
+jest.mock('../../../../models');
+jest.mock('../../../../middleware/authJwt');
 
 describe('PATCH /users/me/address', () => {
     let server;
