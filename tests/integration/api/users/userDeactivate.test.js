@@ -8,7 +8,7 @@ jest.mock('../../../../models');
 jest.mock('../../../../middleware/authJwt');
 jest.mock('../../../../controllers/users.controller');
 
-describe('PATCH /users/me/delete', () => {
+describe('PATCH /users/me/deactivate', () => {
     let server;
 
     beforeAll((done) => {
@@ -27,8 +27,8 @@ describe('PATCH /users/me/delete', () => {
         }));
     });
 
-    test('Deve iniciar a exclusão da conta com sucesso', async () => {
-        console.log('Running test: Deve iniciar a exclusão da conta com sucesso');
+    test('Deve desativar a conta com sucesso', async () => {
+        console.log('Running test: Deve desativar a conta com sucesso');
 
         const userId = 1;
         const user = { userId: userId, update: jest.fn().mockResolvedValue([1]) };
@@ -42,14 +42,14 @@ describe('PATCH /users/me/delete', () => {
         logoutUserSessions.mockResolvedValue();
 
         const response = await request(server)
-            .patch('/users/me/delete')
+            .patch('/users/me/deactivate')
             .set('Authorization', 'Bearer token')
             .expect(200);
 
         expect(response.body).toEqual({
-            message: "Account deletion initiated. Account will be deleted after 30 days unless cancelled."
+            message: "Account has been deactivated."
         });
-    }, 20000); // Aumenta o timeout para 20 segundos
+    });
 
     test('Deve devolver erro 404 se o utilizador não for encontrado', async () => {
         console.log('Running test: Deve devolver erro 404 se o utilizador não for encontrado');
@@ -63,14 +63,14 @@ describe('PATCH /users/me/delete', () => {
         });
 
         const response = await request(server)
-            .patch('/users/me/delete')
+            .patch('/users/me/deactivate')
             .set('Authorization', 'Bearer token')
             .expect(404);
 
         expect(response.body).toEqual({
             message: "User not found."
         });
-    }, 20000); // Aumenta o timeout para 20 segundos
+    });
 
     test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
         console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
@@ -87,13 +87,13 @@ describe('PATCH /users/me/delete', () => {
         });
 
         const response = await request(server)
-            .patch('/users/me/delete')
+            .patch('/users/me/deactivate')
             .set('Authorization', 'Bearer token')
             .expect(500);
 
         expect(response.body).toEqual({
-            message: "Error initiating account deletion",
+            message: "Error deactivating account",
             error: errorMessage
         });
-    }, 20000); // Aumenta o timeout para 20 segundos
+    });
 });

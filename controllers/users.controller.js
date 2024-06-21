@@ -469,6 +469,8 @@ exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshTok
 
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
+
+
 exports.login = async (req, res) => {
     const { usernameOrEmail, password, reactivate } = req.body;
     let t;
@@ -559,7 +561,6 @@ exports.login = async (req, res) => {
 
 
 
-// Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
     console.log(`Received refreshToken: ${refreshToken}`);
@@ -568,19 +569,24 @@ exports.refreshTokens = async (req, res) => {
         return res.status(403).json({ message: "No refresh token found. Please log in again.", redirectTo: '/login' }); 
     }
 
+    let t;
     try {
+        t = await db.sequelize.transaction();
+
         console.log(`Attempting to refresh tokens for user with refreshToken: ${refreshToken}`);
         const existingToken = await Token.findOne({
-            where: { tokenKey: refreshToken, tokenType: 'refresh' }
+            where: { tokenKey: refreshToken, tokenType: 'refresh' },
+            transaction: t
         });
         
         console.log('Existing token found:', existingToken);
         
         if (!existingToken || existingToken.expiresAt < new Date() || existingToken.invalidated) {
             if (existingToken) {
-                await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken } });
+                await Token.update({ invalidated: true, lastUsedAt: new Date() }, { where: { tokenKey: refreshToken }, transaction: t });
                 console.log('Existing token invalidated due to expiration or invalidation.');
             }
+            await t.rollback();
             return res.status(401).json({ message: "Token expired or invalidated, please log in again.", redirectTo: '/login' });
         }
 
@@ -590,17 +596,20 @@ exports.refreshTokens = async (req, res) => {
         const { token: newAccessToken, expires: accessTokenExpires, cookieExpires: accessTokenCookieExpires } = issueAccessToken(id, session);
         const { refreshToken: newRefreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(id, session);
 
-        await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true);
+        await createTokenEntry(newRefreshToken, 'refresh', id, session, refreshTokenExpires, true, t);
         console.log('New tokens issued and database updated.');
 
         this.setTokenCookies(res, newAccessToken, accessTokenCookieExpires, newRefreshToken, refreshTokenCookieExpires);
 
+        await t.commit();
         return res.status(200).json({ success: true });
     } catch (error) {
+        if (t) await t.rollback();
         console.error("Failed to refresh tokens:", error);
         return res.status(500).send({ message: "Failed to refresh tokens. Please try again later." });
     }
 };
+
 
 // Log out action for user
 exports.logout = async (req, res) => {
@@ -659,9 +668,11 @@ exports.logout = async (req, res) => {
 // Controller to handle account deactivation
 exports.deactivateAccount = async (req, res) => {
     const id = req.userId;  // Extracted from verifyToken middleware
-    const t = await db.sequelize.transaction(); // Iniciar transação
+    let t
 
     try {
+
+        t = await db.sequelize.transaction(); 
         // Proceed to deactivate
         const result = await db.User.update({
             isActiveStatus: 'deactivated'
@@ -676,7 +687,7 @@ exports.deactivateAccount = async (req, res) => {
         }
 
         // Logout from all sessions
-        await logoutUserSessions(id, t); 
+        await this.logoutUserSessions(id, t); 
         await t.commit();
         res.status(200).json({ message: "Account has been deactivated." });
     } catch (error) {
@@ -693,43 +704,37 @@ exports.initiateAccountDeletion = async (req, res) => {
     const deletionDate = new Date();
     deletionDate.setDate(deletionDate.getDate() + 30); // Set 30 days from now
 
-    try {
-/*         // Similar check as in deactivation
-        const activeListings = await db.Listing.count({
-            where: { sellerUserId: id, availability: 'Active' }
-        });
-        const activeConversations = await db.ConversationParticipant.count({
-            where: { userId: id },
-            include: [{
-                model: db.Conversation,
-                where: { conversationType: 'transaction' }
-            }]
-        });
+    let transaction;
 
-        if (activeListings > 0 || activeConversations > 0) {
-            return res.status(403).json({ message: "Cannot delete account with active listings or ongoing conversations." });
-        } */
+    try {
+        transaction = await db.sequelize.transaction();
 
         const result = await db.User.update({
             isActiveStatus: 'to be deleted',
             deletionScheduleDate: deletionDate
         }, {
-            where: { userId: id }
+            where: { userId: id },
+            transaction
         });
 
         if (result == 0) {
+            await transaction.rollback();
             return res.status(404).json({ message: "User not found." });
         }
 
         // Logout from all sessions
-        await logoutUserSessions(id, null);
+        await this.logoutUserSessions(id, transaction);
+
+        await transaction.commit();
 
         res.status(200).json({ message: "Account deletion initiated. Account will be deleted after 30 days unless cancelled." });
     } catch (error) {
+        if (transaction) await transaction.rollback();
         console.error("Error initiating account deletion:", error);
         res.status(500).json({ message: "Error initiating account deletion", error: error.message });
     }
 };
+
 
 /**
  * Update or create a user address and corresponding postal code.
@@ -1406,7 +1411,7 @@ async function updatePrivacySettings(userId, settings) {
 
 
 // Logout from all sessions globally
-async function logoutUserSessions(userId, transaction) {
+exports.logoutUserSessions = async (userId, transaction)  => {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
         // Invalidate all session logs for the user
@@ -1438,8 +1443,8 @@ async function logoutUserSessions(userId, transaction) {
     }
 }
 
-exports.logoutUserSessions = logoutUserSessions;
-
+/* exports.logoutUserSessions = logoutUserSessions;
+ */
 function sendVerificationEmail(email) {
     console.log(`Sending verification email to ${email}`);
     // email sending logic here
