@@ -5,12 +5,12 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon app.js",
-  "test": "jest --detectOpenHandles",
-      "test:tokens": "jest tests/unit/utils/tokens.test.js",
+    "test": "jest --detectOpenHandles",
+    "test:tokens": "jest tests/unit/utils/tokens.test.js",
     "test:authJwt": "jest tests/unit/middleware/authJwt.test.js",
-      "test:auth": "jest tests/integration/auth.test.js --detectOpenHandles",
-      "test:authLogout": "jest tests/integration/authLogout.test.js --detectOpenHandles",
-  "test:coverage": "jest --coverage --detectOpenHandles"
+    "test:auth": "jest tests/integration/auth.test.js --detectOpenHandles",
+    "test:authLogout": "jest tests/integration/authLogout.test.js --detectOpenHandles",
+    "test:coverage": "jest --coverage --detectOpenHandles"
   },
   "keywords": [],
   "author": "",

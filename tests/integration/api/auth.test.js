@@ -25,8 +25,8 @@ describe('Auth Endpoints', () => {
     }));
   });
 
-  test('Deve fazer login e retornar tokens e informações do utilizador', async () => {
-    console.log('Running test: Deve fazer login e retornar tokens e informações do utilizador');
+  test('Deve fazer login e devolver tokens e informações do utilizador', async () => {
+    console.log('Running test: Deve fazer login e devolver tokens e informações do utilizador');
 
     const user = { userId: 1, username: 'testuser', email: 'test@example.com', isAdmin: false, validPassword: jest.fn().mockResolvedValue(true) };
     const session = { sessionId: 'session-id' };
@@ -55,8 +55,8 @@ describe('Auth Endpoints', () => {
     );
   });
 
-  test('Deve retornar erro 401 se a password for incorreta', async () => {
-    console.log('Running test: Deve retornar erro 401 se a password for incorreta');
+  test('Deve devolver erro 401 se a password for incorreta', async () => {
+    console.log('Running test: Deve devolver erro 401 se a password for incorreta');
 
     const user = { userId: 1, username: 'testuser', email: 'test@example.com', isAdmin: false, validPassword: jest.fn().mockResolvedValue(false) };
 
@@ -70,8 +70,8 @@ describe('Auth Endpoints', () => {
     expect(response.body).toEqual({ message: 'Invalid username or password' });
   });
 
-  test('Deve retornar erro 404 se o utilizador não for encontrado', async () => {
-    console.log('Running test: Deve retornar erro 404 se o utilizador não for encontrado');
+  test('Deve devolver erro 404 se o utilizador não for encontrado', async () => {
+    console.log('Running test: Deve devolver erro 404 se o utilizador não for encontrado');
 
     User.findOne.mockResolvedValue(null);
 
@@ -83,8 +83,8 @@ describe('Auth Endpoints', () => {
     expect(response.body).toEqual({ message: 'User not found' });
   });
 
-  test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-    console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+  test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+    console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
     const error = new Error('Erro inesperado');
     User.findOne.mockImplementation(() => { throw error; });

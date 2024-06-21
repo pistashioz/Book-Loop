@@ -328,26 +328,20 @@ async function fetchLiteraryReviews(userId, currentUserId, page = 1, limit = 10)
   }
   
 
-// Create a new user
 exports.create = async (req, res) => {
+    // Extract the required fields from the request body
+    const { username, email, password, birthDate, activateConfigs, acceptTAndC } = req.body;
 
-// Extract the required fields from the request body
-const { username, email, password, birthDate, activateConfigs, acceptTAndC } = req.body;
+    if (!username || !email || !password || !birthDate || !acceptTAndC) {
+        return res.status(400).json({ message: "All fields including birth date must be provided and Terms must be accepted" });
+    }
 
-if (!username || !email || !password || !birthDate || !acceptTAndC) {
-    return res.status(400).json({ message: "All fields including birth date must be provided and Terms must be accepted" });
-}
+    // Start a transaction - either all goes well, or none at all
+    const t = await db.sequelize.transaction();
 
-// Start a transaction - either all goes well, or none at all
-const t = await db.sequelize.transaction();
-
-try {
-    // Create a new user
-    const newUser = await User.create({ username, 
-        email, 
-        password,
-        birthDate }, { transaction: t });
-        
+    try {
+        // Create a new user
+        const newUser = await User.create({ username, email, password, birthDate }, { transaction: t });
         
         // Fetch all configurations from the configuration table
         const configurations = await Configuration.findAll({ transaction: t });
@@ -364,10 +358,11 @@ try {
         // Wait for all promises to resolve
         await Promise.all(configPromises);
         
-        
         // Commit the transaction
         await t.commit();
         
+        console.log("User registered successfully:", newUser);
+
         res.status(201).json({
             message: "User registered successfully.",
             user: newUser
@@ -383,6 +378,7 @@ try {
         res.status(500).json({ message: "Error creating user", error: error.message });
     }
 };
+
     
 /* // Update a user
 exports.update = async (req, res) => {
@@ -423,14 +419,18 @@ exports.delete = async (req, res) => {
 }; */
     
 
-// Helper function to create a token entry in the token table
-async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false) {
-    const t = await db.sequelize.transaction();
+async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires, invalidateOldToken = false, transaction) {
     try {
+        console.log('Creating token entry with invalidateOldToken:', invalidateOldToken);
+
         if (invalidateOldToken) {
-            await Token.update({ invalidated: true, lastUsedAt: new Date() },
-                               { where: { sessionId: sessionId, invalidated: false }, transaction: t });
+            console.log('Invalidating old tokens for sessionId:', sessionId);
+            await Token.update(
+                { invalidated: true, lastUsedAt: new Date() },
+                { where: { sessionId: sessionId, invalidated: false }, transaction }
+            );
         }
+
         await Token.create({
             tokenKey,
             tokenType,
@@ -438,14 +438,13 @@ async function createTokenEntry(tokenKey, tokenType, userId, sessionId, expires,
             sessionId,
             expiresAt: expires,
             invalidated: false
-        }, { transaction: t });
-        await t.commit();
+        }, { transaction });
     } catch (error) {
-        await t.rollback();
         console.error("Failed to create token entry:", error);
         throw error;
     }
 }
+
 
 // Helper function to set cookies for refresh token and access token
 exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshToken, refreshTokenCookieExpiry) =>{
@@ -470,10 +469,7 @@ exports.setTokenCookies = (res, accessToken, accessTokenCookieExpiry, refreshTok
 
     console.log('Access Token and Refresh Token cookies set with paths: "/" and "/users/me/refresh" respectively.');
 }
-
-// Login action for user
 exports.login = async (req, res) => {
-    console.log('inside login action')
     const { usernameOrEmail, password, reactivate } = req.body;
     let t;
     try {
@@ -483,11 +479,12 @@ exports.login = async (req, res) => {
             where: { [Op.or]: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
             transaction: t
         });
+
         if (!user) {
             await t.rollback();
             return res.status(404).json({ message: "User not found" });
         }
-        
+
         if (!reactivate && (user.isActiveStatus === 'deactivated' || 
         (user.isActiveStatus === 'to be deleted' && new Date(user.deletionScheduleDate) < new Date()))) {
             await t.rollback();
@@ -496,19 +493,20 @@ exports.login = async (req, res) => {
                 actionRequired: false
             });
         }
-        
+
         const isValidPassword = await user.validPassword(password);
         if (!isValidPassword) {
             await t.rollback();
             return res.status(401).json({ message: "Invalid username or password" });
         }
-        
+
         const existingSession = await SessionLog.findOne({
             where: { userId: user.userId, ipAddress: req.ip, deviceInfo: req.headers['user-agent'], endTime: null },
             transaction: t
         });
 
         if (existingSession) {
+            console.log('Existing session found, ending it for sessionId:', existingSession.sessionId);
             await SessionLog.update(
                 { endTime: new Date() },
                 { where: { sessionId: existingSession.sessionId }, transaction: t }
@@ -518,24 +516,25 @@ exports.login = async (req, res) => {
                 { where: { sessionId: existingSession.sessionId, invalidated: false }, transaction: t }
             );
         }
-        
+
         const sessionLog = await SessionLog.create({
             userId: user.userId,
             startTime: new Date(),
             ipAddress: req.ip,
             deviceInfo: req.headers['user-agent']
         }, { transaction: t });
-        
+
         const { token: accessToken, cookieExpires: accessTokenCookieExpires } = issueAccessToken(user.userId, sessionLog.sessionId);
         const { refreshToken, expires: refreshTokenExpires, cookieExpires: refreshTokenCookieExpires } = handleRefreshToken(user.userId, sessionLog.sessionId);
-        
-        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, { transaction: t });
-        
-        console.log(`access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
-        console.log(`refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
+
+        // Passar invalidateOldToken como false e a transação atual
+        await createTokenEntry(refreshToken, 'refresh', user.userId, sessionLog.sessionId, refreshTokenExpires, false, t);
+
+        console.log(`Access token cookie has been set with expiry: ${accessTokenCookieExpires}`);
+        console.log(`Refresh token cookie has been set with expiry: ${refreshTokenCookieExpires}`);
 
         this.setTokenCookies(res, accessToken, accessTokenCookieExpires, refreshToken, refreshTokenCookieExpires);
-        
+
         if (reactivate) {
             await User.update({
                 isActiveStatus: 'active',
@@ -545,7 +544,7 @@ exports.login = async (req, res) => {
                 transaction: t
             });
         }
-        
+
         await t.commit();
         res.status(200).json({
             message: "Login successful",
@@ -660,42 +659,33 @@ exports.logout = async (req, res) => {
 // Controller to handle account deactivation
 exports.deactivateAccount = async (req, res) => {
     const id = req.userId;  // Extracted from verifyToken middleware
+    const t = await db.sequelize.transaction(); // Iniciar transação
+
     try {
-/*         // Check for active listings or ongoing conversations - still need to implement these models
-        const activeListings = await db.Listing.count({
-            where: { sellerUserId: id, availability: 'Active' }
-        });
-        const activeConversations = await db.ConversationParticipant.count({
-            where: { userId: id },
-            include: [{
-                model: db.Conversation,
-                where: { conversationType: 'transaction' } // The conversations type that we want to check
-            }]
-        });
-
-        if (activeListings > 0 || activeConversations > 0) {
-            return res.status(403).json({ message: "Cannot deactivate account with active listings or ongoing conversations." });
-        } */
-
         // Proceed to deactivate
         const result = await db.User.update({
             isActiveStatus: 'deactivated'
         }, {
-            where: { userId: id }
+            where: { userId: id },
+            transaction: t // Incluir transação
         });
 
         if (result == 0) {
+            await t.rollback();
             return res.status(404).json({ message: "User not found." });
         }
 
         // Logout from all sessions
-        await logoutUserSessions(id, null); 
+        await logoutUserSessions(id, t); 
+        await t.commit();
         res.status(200).json({ message: "Account has been deactivated." });
     } catch (error) {
+        await t.rollback();
         console.error("Error deactivating account:", error);
         res.status(500).json({ message: "Error deactivating account", error: error.message });
     }
 };
+
 
 // Controller to handle account deletion request
 exports.initiateAccountDeletion = async (req, res) => {
@@ -789,14 +779,14 @@ exports.updateUserAddress = async (req, res) => {
         if (street !== undefined && streetNumber !== undefined) {
             user.street = street;
             user.streetNumber = streetNumber;
-        } else if (street === undefined && streetNumber === undefined) {
-            console.log('Street and street number are not provided. Setting them to null.');
+        } else if (street === null && streetNumber === null) {
+            console.log('Street and street number are set to null.');
             user.street = null;
             user.streetNumber = null;
         }
 
         // Update postal code details if provided
-        if (postalCode !== undefined && locality !== undefined && country !== undefined) {
+        if (postalCode !== null && postalCode !== undefined && locality !== undefined && country !== undefined) {
             postalCodeRecord = await PostalCode.findByPk(postalCode, { transaction: t });
             if (!postalCodeRecord) {
                 postalCodeRecord = await PostalCode.create({ postalCode, locality, country }, { transaction: t });
@@ -804,7 +794,7 @@ exports.updateUserAddress = async (req, res) => {
                 await postalCodeRecord.update({ locality, country }, { transaction: t });
             }
             user.postalCode = postalCode;
-        } else if (postalCode === undefined && locality === undefined && country === undefined) {
+        } else if (postalCode === null) {
             user.postalCode = null;
         }
 
@@ -839,7 +829,7 @@ exports.updateUserAddress = async (req, res) => {
 
 
 
-    
+    /* 
 // Session validation to verify active user sessions
 exports.validateSession = (req, res) => {
     // This callback only runs if verifyToken calls next(), meaning the token is valid
@@ -850,7 +840,7 @@ exports.validateSession = (req, res) => {
             username: req.username // I think we might need to fetch the username from the database here, cb the middleware is not adding it to the request!
         }
     });
-};
+}; */
 
    
 // Get user settings accordingly to query params
@@ -1077,7 +1067,6 @@ async function fetchPrivacySettings(userId) {
 }
 
 /////
-
 // Update user settings based on type
 exports.updateUserSettings = async (req, res) => {
     const userId = req.userId;  // Extracted from verifyToken middleware
@@ -1102,6 +1091,10 @@ exports.updateUserSettings = async (req, res) => {
                 return res.status(400).json({ message: "Invalid settings type specified" });
         }
 
+        if (!updateResult || typeof updateResult.status !== 'number' || typeof updateResult.data !== 'object') {
+            throw new Error("Invalid response from settings update function");
+        }
+
         return res.status(updateResult.status).json(updateResult.data);
     } catch (error) {
         console.error('Error updating user settings', error);
@@ -1109,16 +1102,20 @@ exports.updateUserSettings = async (req, res) => {
     }
 };
 
+
 async function updateProfileSettings(userId, body) {
-    const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
-    console.log(body)
+    const { about, defaultLanguage, showCity } = body;
     const t = await db.sequelize.transaction();
+    
+    console.log("Updating profile settings for user:", userId);
+    console.log("Received body:", body);
 
     try {
-        const user = await db.User.findByPk(userId, { transaction: t });
+        const user = await User.findByPk(userId, { transaction: t });
 
         if (!user) {
             await t.rollback();
+            console.log("User not found:", userId);
             return { status: 404, data: { message: "User not found." } };
         }
 
@@ -1127,22 +1124,25 @@ async function updateProfileSettings(userId, body) {
             about: about !== undefined ? about : user.about,
             defaultLanguage: defaultLanguage || user.defaultLanguage,
             showCity: showCity !== undefined ? showCity : user.showCity,
-            // profileImage: profileImage || user.profileImage
         }, { transaction: t });
 
         await t.commit();
-        return {status: 400,
-            data: {message: "User profile updated successfully",
-            user: {
-                about: user.about,
-                defaultLanguage: user.defaultLanguage,
-                showCity: user.showCity,
-                // profileImage: user.profileImage
+        console.log("User profile updated successfully:", user);
+        return {
+            status: 200,
+            data: {
+                message: "User profile updated successfully",
+                user: {
+                    about: user.about,
+                    defaultLanguage: user.defaultLanguage,
+                    showCity: user.showCity,
+                }
             }
-        }};
+        };
     } catch (error) {
         await t.rollback();
-        if (error instanceof ValidationError) {
+        if (error.name === 'SequelizeValidationError') {
+            console.log("Validation error:", error.errors);
             return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
         }
         console.error("Error updating user profile:", error);
@@ -1255,12 +1255,13 @@ async function updateAccountSettings(userId, body) {
         return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
 }
+
+
 // Helper function to update notification settings for a user
 async function updateNotificationSettings(userId, settings) {
     let transaction;
     try {
         transaction = await db.sequelize.transaction();
-        console.log(settings);
 
         // Extract the notifications object from settings
         const notificationSettings = settings.notifications;
@@ -1269,8 +1270,6 @@ async function updateNotificationSettings(userId, settings) {
         }
 
         for (const [configKey, configValue] of Object.entries(notificationSettings)) {
-            console.log(typeof configKey); // Should be string
-            console.log(configValue); // Should be the value of the configKey
 
             // First, fetch the corresponding configuration ID
             const config = await db.Configuration.findOne({
@@ -1321,12 +1320,12 @@ async function updateNotificationSettings(userId, settings) {
         }
 
         await transaction.commit();
-        return { message: "Notification settings updated successfully" };
+        return { status: 200, data: { message: "Notification settings updated successfully" } };
     } catch (error) {
         // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating notification settings", error);
-        throw new Error("Failed to update notification settings");
+        return { status: 500, data: { message: "Failed to update notification settings", error: error.message } };
     }
 }
 
@@ -1396,17 +1395,18 @@ async function updatePrivacySettings(userId, settings) {
         }
 
         await transaction.commit();
-        return { message: "Privacy settings updated successfully" };
+        return { status: 200, data: { message: "Privacy settings updated successfully" } };
     } catch (error) {
         // Rollback the transaction in case of an error
         if (transaction) await transaction.rollback();
         console.error("Error updating privacy settings", error);
-        throw new Error("Failed to update privacy settings");
+        return { status: 500, data: { message: "Failed to update privacy settings", error: error.message } };
     }
 }
 
+
 // Logout from all sessions globally
-exports.logoutUserSessions = async (userId, transaction) => {
+async function logoutUserSessions(userId, transaction) {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
         // Invalidate all session logs for the user
@@ -1438,6 +1438,8 @@ exports.logoutUserSessions = async (userId, transaction) => {
     }
 }
 
+exports.logoutUserSessions = logoutUserSessions;
+
 function sendVerificationEmail(email) {
     console.log(`Sending verification email to ${email}`);
     // email sending logic here
@@ -1448,57 +1450,77 @@ function sendVerificationEmail(email) {
 
 
 
-// Follow another user
 exports.followUser = async (req, res) => {
-
     const { targetUserId } = req.body;
     const userId = req.userId;
-    console.log(`following ${targetUserId}`)
+    console.log(`following ${targetUserId}`);
     if (userId == targetUserId) {
         return res.status(400).json({ message: "Cannot follow yourself." });
     }
 
+    const t = await db.sequelize.transaction();
     try {
-        const userExists = await db.User.findByPk(targetUserId);
+        const userExists = await db.User.findByPk(targetUserId, { transaction: t });
         if (!userExists) {
+            await t.rollback();
             return res.status(404).json({ message: "User not found!" });
         }
 
-        const [followRelationship, created] = await db.FollowRelationship.findCreateFind({
-            where: { mainUserId: userId, followedUserId: targetUserId }
+        const [followRelationship, created] = await db.FollowRelationship.findOrCreate({
+            where: { mainUserId: userId, followedUserId: targetUserId },
+            defaults: { mainUserId: userId, followedUserId: targetUserId },
+            transaction: t
         });
 
-        console.log(followRelationship, created);
         if (!created) {
+            await t.rollback();
             return res.status(400).json({ message: "Already following this user." });
         }
-      
+
+        await db.User.increment('totalFollowers', { by: 1, where: { userId: targetUserId }, transaction: t });
+        await db.User.increment('totalFollowing', { by: 1, where: { userId: userId }, transaction: t });
+
+        await t.commit();
         res.status(200).json({ message: 'User followed successfully.' });
     } catch (error) {
+        await t.rollback();
+        console.error("Error following user:", error);
         res.status(500).json({ message: 'Error following user', error: error.message });
     }
 };
+
 
 // Unfollow a user
 exports.unfollowUser = async (req, res) => {
     const { followedUserId } = req.params;
     const userId = req.userId;
 
-    const relationship = await db.FollowRelationship.findOne({
-        where: { mainUserId: userId, followedUserId }
-    });
-
-    if (!relationship) {
-        return res.status(400).json({ message: "Not currently following this user." });
-    }
-
+    const t = await db.sequelize.transaction();
     try {
-        await relationship.destroy();
+        const relationship = await db.FollowRelationship.findOne({
+            where: { mainUserId: userId, followedUserId },
+            transaction: t
+        });
+
+        if (!relationship) {
+            await t.rollback();
+            return res.status(400).json({ message: "Not currently following this user." });
+        }
+
+        await relationship.destroy({ transaction: t });
+        
+        await db.User.decrement('totalFollowers', { by: 1, where: { userId: followedUserId }, transaction: t });
+        await db.User.decrement('totalFollowing', { by: 1, where: { userId: userId }, transaction: t });
+
+        await t.commit();
         res.status(200).json({ message: 'Unfollowed successfully.' });
     } catch (error) {
+        await t.rollback();
+        console.error("Error unfollowing user:", error);
         res.status(500).json({ message: 'Error unfollowing user', error: error.message });
     }
 };
+
 
 // Remove a follower
 exports.removeFollower = async (req, res) => {
@@ -1510,33 +1532,59 @@ exports.removeFollower = async (req, res) => {
         return res.status(400).json({ message: "Cannot remove yourself as a follower." });
     }
 
+    const t = await db.sequelize.transaction();
+
     try {
         const relationship = await db.FollowRelationship.findOne({
-            where: { mainUserId: followerUserId, followedUserId: userId }
+            where: { mainUserId: followerUserId, followedUserId: userId },
+            transaction: t
         });
 
         if (!relationship) {
+            await t.rollback();
             return res.status(404).json({ message: "This user is not following you." });
         }
 
-        await relationship.destroy();
+        await relationship.destroy({ transaction: t });
+
+        // Decrement the follower count for the user being followed
+        await db.User.decrement('totalFollowers', {
+            where: { userId: userId },
+            transaction: t
+        });
+
+        // Decrement the following count for the user who was following
+        await db.User.decrement('totalFollowing', {
+            where: { userId: followerUserId },
+            transaction: t
+        });
+
+        await t.commit();
+
         res.status(200).json({ message: 'Follower removed successfully.' });
     } catch (error) {
+        await t.rollback();
         res.status(500).json({ message: 'Error removing follower', error: error.message });
     }
 };
+
 
 
 // Lists the users that the specified user is following.
 exports.listFollowing = async (req, res) => {
     const { id } = req.params;
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.userId; // Assuming this is set by your middleware
+    const userId = req.userId; 
 
     console.log('Listing following for user ' + id);
     console.log('userId', userId);
 
     try {
+        const userExists = await db.User.findByPk(id);
+        if (!userExists) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 14 },
             attributes: ['configValue']
@@ -1573,6 +1621,7 @@ exports.listFollowing = async (req, res) => {
             }
             return {
                 ...relationship.dataValues,
+                FollowedUser: relationship.FollowedUser, // Add FollowedUser back to the response
                 isFollowing: !!isFollowing,
                 isCurrentUser: relationship.FollowedUser.userId ? relationship.FollowedUser.userId === userId : false
             };
@@ -1588,16 +1637,22 @@ exports.listFollowing = async (req, res) => {
     }
 };
 
+
 // Lists the users that are following the specified user.
 exports.listFollowers = async (req, res) => {
     const { id } = req.params;
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.userId; 
+    const userId = req.userId;
 
     console.log('Listing followers for user ' + id);
     console.log('userId', userId);
-    
+
     try {
+        const userExists = await db.User.findByPk(id);
+        if (!userExists) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
         const privacy = await db.UserConfiguration.findOne({
             where: { userId: id, configId: 15 },
             attributes: ['configValue']
@@ -1634,6 +1689,7 @@ exports.listFollowers = async (req, res) => {
             }
             return {
                 ...relationship.dataValues,
+                MainUser: relationship.MainUser, // Add MainUser back to the response
                 isFollowing: !!isFollowing,
                 isCurrentUser: relationship.MainUser.userId === userId
             };
@@ -1686,21 +1742,28 @@ exports.unblockUser = async (req, res) => {
     const { blockedUserId } = req.params;
     const userId = req.userId;
 
-    const block = await db.Block.findOne({
-        where: { blockerUserId: userId, blockedUserId }
-    });
-
-    if (!block) {
-        return res.status(400).json({ message: "User not currently blocked." });
-    }
-
     try {
+        const userExists = await User.findByPk(blockedUserId);
+        if (!userExists) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        const block = await db.Block.findOne({
+            where: { blockerUserId: userId, blockedUserId }
+        });
+
+        if (!block) {
+            return res.status(400).json({ message: "User not currently blocked." });
+        }
+
         await block.destroy();
         res.status(200).json({ message: 'User unblocked successfully.' });
     } catch (error) {
+        console.error("Error unblocking user:", error);
         res.status(500).json({ message: 'Error unblocking user', error: error.message });
     }
 };
+
 
 exports.listBlockedUsers = async (req, res) => {
     const userId = req.userId; 
@@ -1829,7 +1892,6 @@ exports.createEntry = async (req, res) => {
     }
 };
 
-// Get all navigation history entries for the user, optionally filtered by type
 // Get all navigation history entries for the user, optionally filtered by type
 exports.getEntries = async (req, res) => {
     try {
@@ -2008,23 +2070,27 @@ exports.getFavoriteGenres = async (req, res) => {
         res.status(500).json({ message: 'Error fetching favorite genres', error: error.message });
     }
 };
-
 // Add a favorite genre
 exports.addFavoriteGenre = async (req, res) => {
     try {
         const userId = req.userId;
-        const { genreName } = req.body;
-        console.log("Adding favorite genre", genreName);
+        const { genreId } = req.body;
+        console.log("Adding favorite genre with ID:", genreId);
+        
         // Check if the genre exists
-        const genre = await Genre.findOne({ where: { genreName } });
+        const genre = await Genre.findByPk(genreId);
         if (!genre) {
-            return res.status(404).json({ success: false,  message: 'Genre not found' });
+            console.log("Genre not found with ID:", genreId);
+            return res.status(404).json({ success: false, message: 'Genre not found' });
         }
+
+        console.log("Genre found:", genre.genreName);
 
         // Check if the user already has 5 favorite genres
         const favoriteCount = await UserFavoriteGenre.count({ where: { userId } });
+        console.log("Favorite count for user:", favoriteCount);
         if (favoriteCount >= 5) {
-            return res.status(400).json({  success: false, message: 'You can only have up to 5 favorite genres' });
+            return res.status(400).json({ success: false, message: 'You can only have up to 5 favorite genres' });
         }
 
         // Check if the genre is already a favorite
@@ -2033,13 +2099,14 @@ exports.addFavoriteGenre = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Genre is already a favorite' });
         }
 
-        const favoriteGenre = await UserFavoriteGenre.create({ userId, genreId: genre.genreId });
-        res.status(201).json({  success: true , message: `Genre '${genreName}' added to favorites` });
+        await UserFavoriteGenre.create({ userId, genreId: genre.genreId });
+        res.status(201).json({ success: true, message: `Genre '${genre.genreName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite genre:", error);
-        res.status(500).json({  success: false, message: 'Error adding favorite genre', error: error.message });
+        res.status(500).json({ success: false, message: 'Error adding favorite genre', error: error.message });
     }
 };
+
 
 
 // Remove a favorite genre
@@ -2081,22 +2148,14 @@ exports.getFavoriteAuthors = async (req, res) => {
     }
 };
 
-
-/**
- * Add a favorite author for a user.
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<Object>} JSON response with success status and message
- */
+// Add a favorite author
 exports.addFavoriteAuthor = async (req, res) => {
     try {
         const userId = req.userId;
-        const { personName } = req.body;
+        const { personId } = req.body;
 
         // Check if the person exists and has the 'author' role
-        const person = await Person.findOne({
-            where: { personName },
+        const person = await Person.findByPk(personId, {
             include: {
                 model: PersonRole,
                 attributes: [],
@@ -2125,12 +2184,13 @@ exports.addFavoriteAuthor = async (req, res) => {
 
         // Add the author to the user's favorites
         await UserFavoriteAuthor.create({ userId, personId: person.personId });
-        res.status(201).json({ success: true, message: `Author '${personName}' added to favorites` });
+        res.status(201).json({ success: true, message: `Author '${person.personName}' added to favorites` });
     } catch (error) {
         console.error("Error adding favorite author:", error);
         res.status(500).json({ message: 'Error adding favorite author', error: error.message });
     }
 };
+
 
 /**
  * Remove a favorite author for a user.
@@ -2158,4 +2218,3 @@ exports.removeFavoriteAuthor = async (req, res) => {
         res.status(500).json({ message: 'Error removing favorite author', error: error.message });
     }
 };
-

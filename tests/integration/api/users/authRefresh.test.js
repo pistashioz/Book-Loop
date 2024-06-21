@@ -1,12 +1,12 @@
 const request = require('supertest');
-const app = require('../../../app');
-const { Token, sequelize } = require('../../../models');
-const { issueAccessToken, handleRefreshToken } = require('../../../middleware/authJwt');
+const app = require('../../../../app');
+const { Token, sequelize } = require('../../../../models');
+const { issueAccessToken, handleRefreshToken } = require('../../../../middleware/authJwt');
 const jwt = require('jsonwebtoken');
-const config = require('../../../config/auth.config');
+const config = require('../../../../config/auth.config');
 
-jest.mock('../../../models');
-jest.mock('../../../middleware/authJwt');
+jest.mock('../../../../models');
+jest.mock('../../../../middleware/authJwt');
 jest.mock('jsonwebtoken');
 
 describe('Auth Refresh Tokens Endpoint', () => {
@@ -57,8 +57,8 @@ describe('Auth Refresh Tokens Endpoint', () => {
     expect(handleRefreshToken).toHaveBeenCalledWith(userId, sessionId);
   });
 
-  test('Deve retornar erro 401 se o refresh token for inválido', async () => {
-    console.log('Running test: Deve retornar erro 401 se o refresh token for inválido');
+  test('Deve devolver erro 401 se o refresh token for inválido', async () => {
+    console.log('Running test: Deve devolver erro 401 se o refresh token for inválido');
 
     const refreshToken = 'invalid-refresh-token';
 
@@ -73,8 +73,8 @@ describe('Auth Refresh Tokens Endpoint', () => {
     expect(Token.findOne).toHaveBeenCalledWith({ where: { tokenKey: refreshToken, tokenType: 'refresh' } });
   });
 
-  test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-    console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+  test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+    console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
     const refreshToken = 'valid-refresh-token';
     const error = new Error('Erro inesperado');
@@ -89,8 +89,8 @@ describe('Auth Refresh Tokens Endpoint', () => {
     expect(response.body).toEqual({ message: "Failed to refresh tokens. Please try again later." });
   });
 
-  test('Deve retornar erro 403 se nenhum refresh token for encontrado', async () => {
-    console.log('Running test: Deve retornar erro 403 se nenhum refresh token for encontrado');
+  test('Deve devolver erro 403 se nenhum refresh token for encontrado', async () => {
+    console.log('Running test: Deve devolver erro 403 se nenhum refresh token for encontrado');
 
     const response = await request(server)
       .post('/users/me/refresh')

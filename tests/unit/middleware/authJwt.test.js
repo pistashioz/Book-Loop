@@ -28,9 +28,9 @@ describe('Middleware de Autenticação - verifyToken', () => {
     jest.resetAllMocks(); 
   });
 
-  test('Deve retornar 401 se não houver token', async () => {
+  test('Deve devolver 401 se não houver token', async () => {
     req.cookies.accessToken = null;
-    console.log('Running test: Deve retornar 401 se não houver token');
+    console.log('Running test: Deve devolver 401 se não houver token');
 
     await verifyToken(req, res, next);
     
@@ -51,11 +51,11 @@ describe('Middleware de Autenticação - verifyToken', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  test('Deve retornar 403 se a sessão for inválida', async () => {
+  test('Deve devolver 403 se a sessão for inválida', async () => {
     const decoded = { id: 1, session: 'session-id' };
     verifyTokenHelper.mockResolvedValue(decoded);
     SessionLog.findOne.mockResolvedValue(null);
-    console.log('Running test: Deve retornar 403 se a sessão for inválida');
+    console.log('Running test: Deve devolver 403 se a sessão for inválida');
 
     await verifyToken(req, res, next);
 
@@ -65,11 +65,11 @@ describe('Middleware de Autenticação - verifyToken', () => {
     expect(res.clearCookie).toHaveBeenCalledWith('refreshToken', { path: '/users/me/refresh' });
   });
 
-  test('Deve retornar 401 se o token precisar de ser atualizado', async () => {
+  test('Deve devolver 401 se o token precisar de ser atualizado', async () => {
     const decoded = { id: 1, session: 'session-id', needsRefresh: true };
     verifyTokenHelper.mockResolvedValue(decoded);
     SessionLog.findOne.mockResolvedValue({ sessionId: 'session-id', endTime: null });
-    console.log('Running test: Deve retornar 401 se o token precisar de ser atualizado');
+    console.log('Running test: Deve devolver 401 se o token precisar de ser atualizado');
 
     await verifyToken(req, res, next);
 
@@ -77,11 +77,11 @@ describe('Middleware de Autenticação - verifyToken', () => {
     expect(res.send).toHaveBeenCalledWith({ refresh: true });
   });
 
-  test('Deve retornar 401 se o token estiver expirado ou inválido', async () => {
+  test('Deve devolver 401 se o token estiver expirado ou inválido', async () => {
     const error = new Error('TokenExpiredError');
     error.name = 'TokenExpiredError';
     verifyTokenHelper.mockRejectedValue(error);
-    console.log('Running test: Deve retornar 401 se o token estiver expirado ou inválido');
+    console.log('Running test: Deve devolver 401 se o token estiver expirado ou inválido');
 
     await verifyToken(req, res, next);
 
@@ -89,10 +89,10 @@ describe('Middleware de Autenticação - verifyToken', () => {
     expect(res.send).toHaveBeenCalledWith({ refresh: true });
   });
 
-  test('Deve retornar 500 para outros erros de autenticação', async () => {
+  test('Deve devolver 500 para outros erros de autenticação', async () => {
     const error = new Error('Erro de autenticação');
     verifyTokenHelper.mockRejectedValue(error);
-    console.log('Running test: Deve retornar 500 para outros erros de autenticação');
+    console.log('Running test: Deve devolver 500 para outros erros de autenticação');
 
     await verifyToken(req, res, next);
 

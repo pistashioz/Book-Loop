@@ -61,8 +61,8 @@ describe('Auth Logout Endpoint', () => {
     );
   });
 
-  test('Deve retornar erro 500 se ocorrer um erro durante o logout', async () => {
-    console.log('Running test: Deve retornar erro 500 se ocorrer um erro durante o logout');
+  test('Deve devolver erro 500 se ocorrer um erro durante o logout', async () => {
+    console.log('Running test: Deve devolver erro 500 se ocorrer um erro durante o logout');
 
     const sessionId = 'session-id';
     const error = new Error('Erro durante logout');

@@ -1,5 +1,3 @@
-// tests/integration/database/user.test.js
-
 const { Sequelize, DataTypes } = require('sequelize');
 const { sequelize } = require('../../../models');
 const UserModel = require('../../../models/user.model');
