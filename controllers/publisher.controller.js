@@ -2,24 +2,17 @@ const db = require('../models');
 const { Publisher, Work, BookEdition, BookInSeries, BookContributor, BookAuthor, Person, Role } = db;
 const { ValidationError, Op } = require('sequelize');
 
-
-/**
- * Create a new publisher.
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<Object>} JSON response with success status and message
- */
 exports.create = async (req, res) => {
     try {
         const { publisherName } = req.body;
 
-        // Validate publisher name
+        console.log(req.body)
+        console.log("Creating publisher with name:", publisherName);
+
         if (!publisherName) {
             return res.status(400).json({ success: false, message: 'Publisher name is required.' });
         }
 
-        // Check for duplicate publisher name
         const existingPublisher = await Publisher.findOne({ where: { publisherName } });
         if (existingPublisher) {
             return res.status(400).json({ 
@@ -29,7 +22,6 @@ exports.create = async (req, res) => {
             });
         }
 
-        // Create new publisher
         const newPublisher = await Publisher.create({ publisherName });
         return res.status(201).json({
             success: true,
@@ -151,21 +143,17 @@ exports.findEditionsByPublisher = async (req, res) => {
         const limit = parseInt(req.query.limit, 10);
         const offset = (page - 1) * limit;
 
-        // Validate page and limit parameters
         if (isNaN(page) || page < 1 || isNaN(limit) || limit < 1) {
             return res.status(400).json({ success: false, message: "Page and limit must be positive integers." });
         }
 
-        // Check if the publisher exists
         const publisher = await Publisher.findByPk(publisherId);
         if (!publisher) {
             return res.status(404).json({ success: false, message: 'Publisher not found.' });
         }
 
-        // Fetch total count of book editions for the publisher
         const totalItems = await BookEdition.count({ where: { publisherId } });
 
-        // Fetch paginated book editions with required details
         const editions = await BookEdition.findAll({
             where: { publisherId },
             limit,
@@ -180,13 +168,14 @@ exports.findEditionsByPublisher = async (req, res) => {
                             model: BookInSeries,
                             as: 'BookInSeries',
                             attributes: ['seriesId', 'seriesName', 'seriesDescription']
-                        }, 
+                        },
                         {
                             model: BookAuthor,
                             as: 'BookAuthors',
                             attributes: ['personId'],
                             include: [
-                                { model: Person, as: 'Person' ,attributes: ['personId', 'personName'] }]
+                                { model: Person, as: 'Person', attributes: ['personId', 'personName'] }
+                            ]
                         }
                     ]
                 },
@@ -207,16 +196,13 @@ exports.findEditionsByPublisher = async (req, res) => {
             order: [['publicationDate', 'DESC']]
         });
 
-        
-
-        // Transform the editions to include additional details
         const formattedEditions = editions.map(edition => ({
             UUID: edition.UUID,
             title: edition.title,
             coverImage: edition.coverImage,
             publicationDate: edition.publicationDate,
             pageNumber: edition.pageNumber,
-            workDetails: {
+            workDetails: edition.Work ? {
                 totalReviews: edition.Work.totalReviews,
                 averageLiteraryRating: edition.Work.averageLiteraryRating,
                 author: edition.Work.BookAuthors.map(author => ({
@@ -229,12 +215,12 @@ exports.findEditionsByPublisher = async (req, res) => {
                     seriesDescription: edition.Work.BookInSeries.seriesDescription,
                     seriesOrder: edition.Work.seriesOrder
                 } : null
-            },
-            contributors: edition.bookContributors.map(contributor => ({
-                personId: contributor.person.personId,
-                personName: contributor.person.personName,
-                roles: contributor ? contributor.Role.roleName : null
-            }))
+            } : null,
+            contributors: edition.bookContributors ? edition.bookContributors.map(contributor => ({
+                personId: contributor.Person.personId,
+                personName: contributor.Person.personName,
+                roles: contributor.Role ? contributor.Role.roleName : null
+            })) : []
         }));
 
         const totalPages = Math.ceil(totalItems / limit);
@@ -251,6 +237,7 @@ exports.findEditionsByPublisher = async (req, res) => {
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching editions" });
     }
 };
+
 
 /**
  * Update a publisher's name by ID.

@@ -166,8 +166,8 @@ describe('Listings API', () => {
             });
         }, 60000); 
         
-        test('Deve devolver erro 500 se ocorrer um erro inesperado ao buscar anúncios', async () => {
-            console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado ao buscar anúncios');
+        test('Deve devolver erro 500 se ocorrer um erro inesperado ao procurar anúncios', async () => {
+            console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado ao procurar anúncios');
 
             Listing.findAndCountAll.mockImplementation(() => {
                 throw new Error("Erro inesperado");

@@ -20,14 +20,21 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-
 // Middleware to parse JSON body data in incoming requests
 app.use(express.json());
+// Middleware to parse URL-encoded data in incoming requests
+app.use(express.urlencoded({ extended: true }));
 
 // Middleware to parse cookie data in incoming requests
- app.use(cookieParser());
+app.use(cookieParser());
 
- // Prevent TRACE method to protect against XST attacks
+// Middleware for logging request bodies (for debugging)
+app.use((req, res, next) => {
+  console.log('Request Body:', req.body);
+  next();
+});
+
+// Prevent TRACE method to protect against XST attacks
 app.use((req, res, next) => {
   if (req.method === "TRACE") {
       res.status(405).send("TRACE method is disabled.");
@@ -52,11 +59,8 @@ app.use('/users', userRoutes);
 const wishlistRoutes = require('./routes/wishlist.routes');
 app.use('/wishlist', wishlistRoutes);
 
-/* const adminRoutes = require('./routes/admin.routes');
-app.use('/', adminRoutes); */
-
 const listingRoutes = require('./routes/listings.routes');
- app.use('/listings', listingRoutes);
+app.use('/listings', listingRoutes);
 
 const worksRoutes = require('./routes/works.routes');
 app.use('/works', worksRoutes);
@@ -64,36 +68,19 @@ app.use('/works', worksRoutes);
 const bookInSeriesRoutes = require('./routes/bookInSeries.routes');
 app.use('/book-in-series', bookInSeriesRoutes);
 
-/* const bookEditionRoutes = require('./routes/bookEdition.routes');
-app.use('/book', bookEditionRoutes); */
-
 const publisherRoutes = require('./routes/publisher.routes');
 app.use('/publishers', publisherRoutes);
-
-/* const bookAuthorRoutes = require('./routes/bookAuthor.routes');
-app.use('/authors', bookAuthorRoutes); */
 
 const personRoutes = require('./routes/person.routes');
 app.use('/persons', personRoutes);
 
-/* const bookContributorRoutes = require('./routes/bookContributor.routes');
-app.use('/contributors', bookContributorRoutes);
- */
 const genreRoutes = require('./routes/genre.routes');
 app.use('/genres', genreRoutes);
-
-/* const bookGenreRoutes = require('./routes/bookGenre.routes');
-app.use('/book-genres', bookGenreRoutes); */
 
 // Catch-all for any unhandled routes, sending a 404 response
 app.all('*', (req, res) => {
   res.status(404).send('Resource not found. Please check the URL.');
 });
-
-/* // Start the server on the configured host and port
-app.listen(PORT, HOST, () => {
-  console.log(`Server running at http://${HOST}:${PORT}/`);
-}); */
 
 // Export the app for testing
 module.exports = app;

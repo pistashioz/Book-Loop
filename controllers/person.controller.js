@@ -10,7 +10,6 @@ const { ValidationError, Op, fn, col } = require('sequelize');
  * @returns {Promise<Object>} JSON response with success status and data
  */
 exports.findAll = async (req, res) => {
-    const t = await db.sequelize.transaction();
     try {
         const page = parseInt(req.query.page, 10) || 1;
         const limit = parseInt(req.query.limit, 10) || 10;
@@ -19,11 +18,11 @@ exports.findAll = async (req, res) => {
 
         let where = {};
         if (role) {
-            const roleData = await Role.findOne({ where: { roleName: role }, transaction: t });
+            const roleData = await Role.findOne({ where: { roleName: role } });
             if (roleData) {
                 console.log(`Filtering by role '${role}'.`);
-                const personRoles = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'], transaction: t });
-                const personIds = personRoles.map(pr => pr.personId);
+                const personRoles = await PersonRole.findAll({ where: { roleId: roleData.roleId }, attributes: ['personId'] });
+                const personIds = personRoles ? personRoles.map(pr => pr.personId) : [];
                 where = { personId: { [Op.in]: personIds } };
             } else {
                 return res.status(404).json({ success: false, message: `Role '${role}' not found.` });
@@ -38,42 +37,42 @@ exports.findAll = async (req, res) => {
         const { count, rows: persons } = await Person.findAndCountAll({
             where,
             limit,
-            offset,
-            transaction: t
+            offset
         });
 
         const totalPages = Math.ceil(count / limit);
 
         const detailedPersons = await Promise.all(persons.map(async person => {
-            const worksCount = await BookAuthor.count({ where: { personId: person.personId }, transaction: t });
-            const translationCount = await BookContributor.count({
+            const worksCount = await BookAuthor.count({ where: { personId: person.personId } });
+            const translatorRole = await Role.findOne({ where: { roleName: 'Translator' }, attributes: ['roleId'] });
+            const narratorRole = await Role.findOne({ where: { roleName: 'Narrator' }, attributes: ['roleId'] });
+
+            const translationCount = translatorRole ? await BookContributor.count({
                 where: {
                     personId: person.personId,
-                    roleId: (await Role.findOne({ where: { roleName: 'Translator' }, attributes: ['roleId'], transaction: t })).roleId
-                },
-                transaction: t
-            });
-            const audiobookCount = await BookContributor.count({
+                    roleId: translatorRole.roleId
+                }
+            }) : 0;
+
+            const audiobookCount = narratorRole ? await BookContributor.count({
                 where: {
                     personId: person.personId,
-                    roleId: (await Role.findOne({ where: { roleName: 'Narrator' }, attributes: ['roleId'], transaction: t })).roleId
-                },
-                transaction: t
-            });
+                    roleId: narratorRole.roleId
+                }
+            }) : 0;
 
-            const bookAuthorWorks = await BookAuthor.findAll({ where: { personId: person.personId }, attributes: ['workId'], transaction: t });
-            const bookContributorEditions = await BookContributor.findAll({ where: { personId: person.personId }, attributes: ['editionUUID'], transaction: t });
+            const bookAuthorWorks = await BookAuthor.findAll({ where: { personId: person.personId }, attributes: ['workId'] });
+            const bookContributorEditions = await BookContributor.findAll({ where: { personId: person.personId }, attributes: ['editionUUID'] });
 
-            const workIds = bookAuthorWorks.map(ba => ba.workId);
-            const editionUUIDs = bookContributorEditions.map(bc => bc.editionUUID);
+            const workIds = bookAuthorWorks ? bookAuthorWorks.map(ba => ba.workId) : [];
+            const editionUUIDs = bookContributorEditions ? bookContributorEditions.map(bc => bc.editionUUID) : [];
 
             let mostRecentPublication = null;
             if (workIds.length > 0) {
                 const mostRecentWorkEdition = await BookEdition.findOne({
                     where: { workId: { [Op.in]: workIds } },
                     attributes: ['publicationDate'],
-                    order: [['publicationDate', 'DESC']],
-                    transaction: t
+                    order: [['publicationDate', 'DESC']]
                 });
                 mostRecentPublication = mostRecentWorkEdition ? mostRecentWorkEdition.publicationDate : null;
             }
@@ -82,8 +81,7 @@ exports.findAll = async (req, res) => {
                 const mostRecentEdition = await BookEdition.findOne({
                     where: { UUID: { [Op.in]: editionUUIDs } },
                     attributes: ['publicationDate'],
-                    order: [['publicationDate', 'DESC']],
-                    transaction: t
+                    order: [['publicationDate', 'DESC']]
                 });
                 if (!mostRecentPublication || (mostRecentEdition && new Date(mostRecentEdition.publicationDate) > new Date(mostRecentPublication))) {
                     mostRecentPublication = mostRecentEdition ? mostRecentEdition.publicationDate : null;
@@ -91,15 +89,13 @@ exports.findAll = async (req, res) => {
             }
 
             return {
-                ...person.toJSON(),
+                ...JSON.parse(JSON.stringify(person)),
                 worksCount,
                 translationCount,
                 audiobookCount,
                 mostRecentPublication
             };
         }));
-
-        await t.commit();
 
         res.status(200).json({
             success: true,
@@ -109,7 +105,6 @@ exports.findAll = async (req, res) => {
             persons: detailedPersons
         });
     } catch (error) {
-        await t.rollback();
         console.error("Error fetching persons:", error);
         res.status(500).json({ success: false, message: error.message || "Some error occurred while fetching persons" });
     }
@@ -213,8 +208,8 @@ exports.getAllRoles = async (req, res) => {
             message: `Found ${roles.length} roles`,
             roles,
             links: [
-                { rel: "self", href: `/roles`, method: "GET" },
-                { rel: "create", href: `/roles`, method: "POST" }
+                { rel: "self", href: `/persons/roles`, method: "GET" },
+                { rel: "create", href: `/persons/roles`, method: "POST" }
             ]
         });
     } catch (error) {

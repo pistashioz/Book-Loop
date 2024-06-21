@@ -111,8 +111,8 @@ describe('Admin Users API', () => {
     });
 
     describe('DELETE /users/:userId', () => {
-        test('Deve deletar uma conta de utilizador com sucesso', async () => {
-            console.log('Running test: Deve deletar uma conta de utilizador com sucesso');
+        test('Deve remover uma conta de utilizador com sucesso', async () => {
+            console.log('Running test: Deve remover uma conta de utilizador com sucesso');
 
             const user = {
                 userId: 4,
@@ -151,8 +151,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'User not eligible for deletion' });
         });
 
-        test('Deve devolver erro 403 se tentar deletar outro admin', async () => {
-            console.log('Running test: Deve devolver erro 403 se tentar deletar outro admin');
+        test('Deve devolver erro 403 se tentar remover outro admin', async () => {
+            console.log('Running test: Deve devolver erro 403 se tentar remover outro admin');
 
             const adminUser = {
                 userId: 6,

@@ -15,17 +15,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         tableName: 'followRelationship',
         timestamps: false,
-        freezeTableName: true,
-        hooks: {
-            afterCreate: async (follow, options) => {
-                await sequelize.models.User.increment('totalFollowers', { where: { userId: follow.followedUserId } });
-                await sequelize.models.User.increment('totalFollowing', { where: { userId: follow.mainUserId } });
-            },
-            afterDestroy: async (follow, options) => {
-                await sequelize.models.User.decrement('totalFollowers', { where: { userId: follow.followedUserId } });
-                await sequelize.models.User.decrement('totalFollowing', { where: { userId: follow.mainUserId } });
-            }
-        }
+        freezeTableName: true
     });
 
     return FollowRelationship;

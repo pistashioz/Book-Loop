@@ -10,14 +10,15 @@ const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
         min: dbConfig.pool.min,
         acquire: dbConfig.pool.acquire,
         idle: dbConfig.pool.idle
-    }
+    },
+    logging: console.log // Adiciona logs SQL
 });
 
 // Authenticate the connection to the database and sync models.
 sequelize.authenticate()
      .then(() => {
         console.log('Connection has been established successfully.');
-    // return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
+    //return sequelize.sync({ alter: true }); // Adjust the database tables to match the models if necessary.
     })    
      .then(() => {
         console.log('Database models were synchronized successfully.');
@@ -25,7 +26,7 @@ sequelize.authenticate()
     .catch(err => {
         console.error('Unable to connect to the database:', err);
     });
-    
+
 const db = {};
 db.sequelize = sequelize;
 // Load models

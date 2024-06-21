@@ -1,106 +1,166 @@
-const db = require('../models');
-const { Wishlist, Listing, User } = db;
-const { Op, ValidationError } = require('sequelize');
+const request = require('supertest');
+const app = require('../../../../app');
+const { User, Listing, Wishlist } = require('../../../../models');
+const { verifyToken } = require('../../../../middleware/authJwt');
 
-// Add a listing to the wishlist
-exports.addListingToWishlist = async (req, res) => {
-    try {
-        const userId = req.userId;
-        const { listingId } = req.body;
+jest.mock('../../../../models');
+jest.mock('../../../../middleware/authJwt');
 
-        // Check if listing exists and ensure it doesn't belong to the user
-        const listing = await Listing.findByPk(listingId, {
-            attributes: ['sellerUserId', 'availability']
+describe('Wishlist API', () => {
+    let server;
+
+    beforeAll((done) => {
+        server = app.listen(done);
+    });
+
+    afterAll((done) => {
+        server.close(done);
+    });
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    describe('POST /wishlist', () => {
+        test('Deve adicionar um anúncio à wishlist com sucesso', async () => {
+            jest.setTimeout(60000); // Define um timeout de 60 segundos para este teste
+            console.log('Running test: Deve adicionar um anúncio à wishlist com sucesso');
+
+            const userId = 1;
+            const listingId = 100;
+            const listing = { sellerUserId: 2, availability: 'Active' };
+
+            Listing.findByPk.mockResolvedValue(listing);
+            Wishlist.findOne.mockResolvedValue(null);
+            Wishlist.create.mockResolvedValue({ userId, listingId });
+            verifyToken.mockImplementation((req, res, next) => {
+                req.userId = userId;
+                next();
+            });
+
+            const response = await request(server)
+                .post('/wishlist')
+                .send({ listingId })
+                .set('Authorization', 'Bearer token')
+                .expect(201);
+
+            expect(response.body).toEqual({
+                message: 'Listing added to wishlist',
+            });
+
+            console.log('Test completed: Deve adicionar um anúncio à wishlist com sucesso');
         });
 
-        if (!listing || listing.availability === 'Hidden') {
-            return res.status(400).json({ message: 'Cannot add a non-existing or hidden listing to wishlist' });
-        }
+        test('Deve devolver erro 400 se o anúncio não existir ou estiver oculto', async () => {
+            jest.setTimeout(60000);
+            console.log('Running test: Deve devolver erro 400 se o anúncio não existir ou estiver oculto');
 
-        if (listing.sellerUserId === userId) {
-            return res.status(400).json({ message: 'Cannot add your own listing to wishlist' });
-        }
+            const userId = 1;
+            const listingId = 100;
 
-        // Check if the listing is already in the wishlist
-        const existingWishlistEntry = await Wishlist.findOne({ where: { userId, listingId } });
-        if (existingWishlistEntry) {
-            return res.status(400).json({ message: 'Listing already in wishlist' });
-        }
+            Listing.findByPk.mockResolvedValue(null);
+            verifyToken.mockImplementation((req, res, next) => {
+                req.userId = userId;
+                next();
+            });
 
-        // Add listing to wishlist
-        await Wishlist.create({ userId, listingId });
-        res.status(201).json({ message: 'Listing added to wishlist' });
-    } catch (error) {
-        console.error("Error adding listing to wishlist:", error);
-        res.status(500).json({ message: 'Error adding listing to wishlist', error: error.message });
-    }
-};
+            const response = await request(server)
+                .post('/wishlist')
+                .send({ listingId })
+                .set('Authorization', 'Bearer token')
+                .expect(400);
 
-// Get wishlist
-exports.getWishlist = async (req, res) => {
-    try {
-        const userId = req.userId;
+            expect(response.body).toEqual({
+                message: 'Cannot add a non-existing or hidden listing to wishlist',
+            });
 
-        const wishlist = await Wishlist.findAll({
-            where: { userId },
-            include: {
-                model: Listing,
-                as: 'Listing', 
-                attributes: ['listingId', 'listingTitle', 'price', 'listingCondition', 'availability'],
-                where: { availability: { [Op.ne]: 'Hidden' } },
-                include: [
-                    { model: db.BookEdition, attributes: ['title'], as: 'BookEdition' },
-                    { model: db.ListingImage, attributes: ['imageUrl'], as: 'ListingImages', limit: 1 }
-                ]
-            }
+            console.log('Test completed: Deve devolver erro 400 se o anúncio não existir ou estiver oculto');
         });
 
-        const formattedWishlist = wishlist.map(item => ({
-            listingId: item.Listing.listingId,
-            listingTitle: item.Listing.listingTitle,
-            price: item.Listing.price,
-            listingCondition: item.Listing.listingCondition,
-            listingImage: item.Listing.ListingImages.length > 0 ? item.Listing.ListingImages[0].imageUrl : null,
-            bookEditionTitle: item.Listing.BookEdition.title,
-            addedDate: item.addedDate
-        }));
+        test('Deve devolver erro 400 se o anúncio pertencer ao próprio utilizador', async () => {
+            jest.setTimeout(60000); 
+            console.log('Running test: Deve devolver erro 400 se o anúncio pertencer ao próprio utilizador');
 
-        res.status(200).json(formattedWishlist);
-    } catch (error) {
-        console.error("Error fetching wishlist:", error);
-        res.status(500).json({ message: 'Error fetching wishlist', error: error.message });
-    }
-};
+            const userId = 1;
+            const listingId = 100;
+            const listing = { sellerUserId: 1, availability: 'Active' };
 
-// Remove a listing from the wishlist
-exports.removeListingFromWishlist = async (req, res) => {
-    try {
-        const userId = req.userId;
-        const { listingId } = req.params;
+            Listing.findByPk.mockResolvedValue(listing);
+            verifyToken.mockImplementation((req, res, next) => {
+                req.userId = userId;
+                next();
+            });
 
-        // Fetch the listing to check its availability
-        const listing = await Listing.findByPk(listingId, {
-            attributes: ['availability']
+            const response = await request(server)
+                .post('/wishlist')
+                .send({ listingId })
+                .set('Authorization', 'Bearer token')
+                .expect(400);
+
+            expect(response.body).toEqual({
+                message: 'Cannot add your own listing to wishlist',
+            });
+
+            console.log('Test completed: Deve devolver erro 400 se o anúncio pertencer ao próprio utilizador');
         });
 
-        if (!listing || listing.availability === 'Hidden') {
-            return res.status(400).json({ message: 'Cannot remove a non-existing or hidden listing from wishlist' });
-        }
+        test('Deve devolver erro 400 se o anúncio já estiver na wishlist', async () => {
+            jest.setTimeout(60000); 
+            console.log('Running test: Deve devolver erro 400 se o anúncio já estiver na wishlist');
 
-        const deleted = await Wishlist.destroy({
-            where: {
-                userId,
-                listingId
-            }
+            const userId = 1;
+            const listingId = 100;
+            const listing = { sellerUserId: 2, availability: 'Active' };
+            const wishlist = { userId, listingId };
+
+            Listing.findByPk.mockResolvedValue(listing);
+            Wishlist.findOne.mockResolvedValue(wishlist);
+            verifyToken.mockImplementation((req, res, next) => {
+                req.userId = userId;
+                next();
+            });
+
+            const response = await request(server)
+                .post('/wishlist')
+                .send({ listingId })
+                .set('Authorization', 'Bearer token')
+                .expect(400);
+
+            expect(response.body).toEqual({
+                message: 'Listing already in wishlist',
+            });
+
+            console.log('Test completed: Deve devolver erro 400 se o anúncio já estiver na wishlist');
         });
 
-        if (deleted) {
-            res.status(200).json({ message: 'Listing removed from wishlist' });
-        } else {
-            res.status(404).json({ message: 'Listing not found in wishlist' });
-        }
-    } catch (error) {
-        console.error("Error removing listing from wishlist:", error);
-        res.status(500).json({ message: 'Error removing listing from wishlist', error: error.message });
-    }
-};
+        test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+            jest.setTimeout(60000); 
+            console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
+
+            const userId = 1;
+            const listingId = 100;
+            const errorMessage = 'Erro inesperado';
+
+            Listing.findByPk.mockImplementation(() => {
+                throw new Error(errorMessage);
+            });
+            verifyToken.mockImplementation((req, res, next) => {
+                req.userId = userId;
+                next();
+            });
+
+            const response = await request(server)
+                .post('/wishlist')
+                .send({ listingId })
+                .set('Authorization', 'Bearer token')
+                .expect(500);
+
+            expect(response.body).toEqual({
+                message: 'Error adding listing to wishlist',
+                error: errorMessage,
+            });
+
+            console.log('Test completed: Deve devolver erro 500 se ocorrer um erro inesperado');
+        });
+    });
+});

@@ -18,8 +18,6 @@ router.route('/')
     .post(verifyToken, listingsController.createListing)
     .get(listingsController.findAllListings)
 
-/* // Route to create a new listing
-router.post('/', verifyToken, listingsController.createListing); */
 
 router.route('/:listingId')
     .get( extractUserId, listingsController.findListingById)

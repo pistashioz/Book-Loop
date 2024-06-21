@@ -1,4 +1,4 @@
-/* // tests/setup.js
+// tests/setup.js
 const { sequelize } = require('../models');
 
 let transaction;
@@ -24,4 +24,3 @@ afterAll(async () => {
 module.exports = {
   getTransaction: () => transaction,
 };
- */
