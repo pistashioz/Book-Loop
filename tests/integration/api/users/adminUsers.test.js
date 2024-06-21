@@ -39,8 +39,8 @@ describe('Admin Users API', () => {
     });
 
     describe('PATCH /users/:userId', () => {
-        test('Deve suspender uma conta de usuário com sucesso', async () => {
-            console.log('Running test: Deve suspender uma conta de usuário com sucesso');
+        test('Deve suspender uma conta de utilizador com sucesso', async () => {
+            console.log('Running test: Deve suspender uma conta de utilizador com sucesso');
 
             const user = {
                 userId: 2,
@@ -61,8 +61,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'User account suspended' });
         });
 
-        test('Deve retornar erro 404 se o usuário não for encontrado', async () => {
-            console.log('Running test: Deve retornar erro 404 se o usuário não for encontrado');
+        test('Deve devolver erro 404 se o utilizador não for encontrado', async () => {
+            console.log('Running test: Deve devolver erro 404 se o utilizador não for encontrado');
 
             User.findByPk.mockResolvedValue(null);
 
@@ -75,8 +75,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'User not found' });
         });
 
-        test('Deve retornar erro 403 se tentar suspender outro admin', async () => {
-            console.log('Running test: Deve retornar erro 403 se tentar suspender outro admin');
+        test('Deve devolver erro 403 se tentar suspender outro admin', async () => {
+            console.log('Running test: Deve devolver erro 403 se tentar suspender outro admin');
 
             const adminUser = {
                 userId: 3,
@@ -94,8 +94,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'Cannot suspend or unsuspend an admin user' });
         });
 
-        test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-            console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+        test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+            console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
 
             User.findByPk.mockImplementation(() => { throw new Error('Erro inesperado'); });
@@ -111,8 +111,8 @@ describe('Admin Users API', () => {
     });
 
     describe('DELETE /users/:userId', () => {
-        test('Deve deletar uma conta de usuário com sucesso', async () => {
-            console.log('Running test: Deve deletar uma conta de usuário com sucesso');
+        test('Deve deletar uma conta de utilizador com sucesso', async () => {
+            console.log('Running test: Deve deletar uma conta de utilizador com sucesso');
 
             const user = {
                 userId: 4,
@@ -133,8 +133,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'User account deleted' });
         });
 
-        test('Deve retornar erro 400 se o usuário não estiver agendado para exclusão', async () => {
-            console.log('Running test: Deve retornar erro 400 se o usuário não estiver agendado para exclusão');
+        test('Deve devolver erro 400 se o utilizador não estiver agendado para exclusão', async () => {
+            console.log('Running test: Deve devolver erro 400 se o utilizador não estiver agendado para exclusão');
 
             const user = {
                 userId: 5,
@@ -151,8 +151,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'User not eligible for deletion' });
         });
 
-        test('Deve retornar erro 403 se tentar deletar outro admin', async () => {
-            console.log('Running test: Deve retornar erro 403 se tentar deletar outro admin');
+        test('Deve devolver erro 403 se tentar deletar outro admin', async () => {
+            console.log('Running test: Deve devolver erro 403 se tentar deletar outro admin');
 
             const adminUser = {
                 userId: 6,
@@ -171,8 +171,8 @@ describe('Admin Users API', () => {
             expect(response.body).toEqual({ message: 'Cannot delete an admin user' });
         });
 
-        test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-            console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+        test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+            console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
 
             User.findByPk.mockImplementation(() => { throw new Error('Erro inesperado'); });

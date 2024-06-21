@@ -37,8 +37,8 @@ describe('Get Suspended Users API', () => {
         });
     });
 
-    test('Deve retornar os usuários suspensos com sucesso', async () => {
-        console.log('Running test: Deve retornar os usuários suspensos com sucesso');
+    test('Deve devolver os utilizadores suspensos com sucesso', async () => {
+        console.log('Running test: Deve devolver os utilizadores suspensos com sucesso');
 
         const users = [
             {
@@ -82,8 +82,8 @@ describe('Get Suspended Users API', () => {
         expect(response.body.totalPages).toEqual(1);
     });
 
-    test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-        console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+    test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+        console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
         User.findAndCountAll.mockImplementation(() => { throw new Error('Erro inesperado'); });
 

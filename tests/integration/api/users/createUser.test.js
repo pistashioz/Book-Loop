@@ -24,7 +24,7 @@ describe('POST /users', () => {
     });
 
     // Not working :/
-    // test('Deve criar um novo usuário com sucesso', async () => {
+    // test('Deve criar um novo utilizador com sucesso', async () => {
     //     const newUser = {
     //         userId: 1,
     //         username: 'testuser',
@@ -55,7 +55,7 @@ describe('POST /users', () => {
     //     });
     // });
 
-    test('Deve retornar erro 400 se campos obrigatórios estiverem ausentes', async () => {
+    test('Deve devolver erro 400 se campos obrigatórios estiverem ausentes', async () => {
         const response = await request(server)
             .post('/users')
             .send({
@@ -73,7 +73,7 @@ describe('POST /users', () => {
         });
     });
 
-    test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
+    test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
         User.create.mockRejectedValue(new Error('Erro inesperado'));
 
         const response = await request(server)

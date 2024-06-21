@@ -103,8 +103,8 @@ describe('Favorite Genres API', () => {
             expect(response.body).toEqual({ success: false, message: 'Genre not found' });
         });
 
-        test('Deve devolver erro 400 se o usuário já tiver 5 géneros favoritos', async () => {
-            console.log('Running test: Deve devolver erro 400 se o usuário já tiver 5 géneros favoritos');
+        test('Deve devolver erro 400 se o utilizador já tiver 5 géneros favoritos', async () => {
+            console.log('Running test: Deve devolver erro 400 se o utilizador já tiver 5 géneros favoritos');
 
             const genreId = 1;
             const genre = { genreId, genreName: 'Fantasy' };

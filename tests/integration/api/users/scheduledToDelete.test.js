@@ -37,8 +37,8 @@ describe('Get Users Scheduled to Delete API', () => {
         });
     });
 
-    test('Deve retornar os usuários agendados para exclusão com sucesso', async () => {
-        console.log('Running test: Deve retornar os usuários agendados para exclusão com sucesso');
+    test('Deve devolver os utilizadores agendados para exclusão com sucesso', async () => {
+        console.log('Running test: Deve devolver os utilizadores agendados para exclusão com sucesso');
 
         const users = [
             {
@@ -73,8 +73,8 @@ describe('Get Users Scheduled to Delete API', () => {
         expect(receivedUsers).toEqual(users);
     });
 
-    test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-        console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+    test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+        console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
 
         User.findAll.mockImplementation(() => { throw new Error('Erro inesperado'); });
 

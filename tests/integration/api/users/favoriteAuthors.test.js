@@ -103,8 +103,8 @@ describe('Favorite Authors API', () => {
             expect(response.body).toEqual({ message: 'Author not found' });
         });
 
-        test('Deve devolver erro 400 se o usuário já tiver 5 autores favoritos', async () => {
-            console.log('Running test: Deve devolver erro 400 se o usuário já tiver 5 autores favoritos');
+        test('Deve devolver erro 400 se o utilizador já tiver 5 autores favoritos', async () => {
+            console.log('Running test: Deve devolver erro 400 se o utilizador já tiver 5 autores favoritos');
 
             const personId = 1;
             const person = { personId, personName: 'Author One' };

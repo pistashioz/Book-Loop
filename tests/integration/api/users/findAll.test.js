@@ -23,8 +23,8 @@ describe('Find All Users API', () => {
         }));
     });
 
-    test('Deve retornar todos os usuários com sucesso', async () => {
-        console.log('Running test: Deve retornar todos os usuários com sucesso');
+    test('Deve devolver todos os utilizadores com sucesso', async () => {
+        console.log('Running test: Deve devolver todos os utilizadores com sucesso');
 
         const users = [
             {
@@ -65,8 +65,8 @@ describe('Find All Users API', () => {
         });
     });
 
-    test('Deve aplicar filtro por nome de usuário', async () => {
-        console.log('Running test: Deve aplicar filtro por nome de usuário');
+    test('Deve aplicar filtro por nome de utilizador', async () => {
+        console.log('Running test: Deve aplicar filtro por nome de utilizador');
 
         const users = [
             {
@@ -97,8 +97,8 @@ describe('Find All Users API', () => {
         });
     });
 
-    test('Deve aplicar filtro por status do usuário', async () => {
-        console.log('Running test: Deve aplicar filtro por status do usuário');
+    test('Deve aplicar filtro por status do utilizador', async () => {
+        console.log('Running test: Deve aplicar filtro por status do utilizador');
 
         const users = [
             {
@@ -129,8 +129,8 @@ describe('Find All Users API', () => {
         });
     });
 
-    test('Deve retornar erro 500 se ocorrer um erro inesperado', async () => {
-        console.log('Running test: Deve retornar erro 500 se ocorrer um erro inesperado');
+    test('Deve devolver erro 500 se ocorrer um erro inesperado', async () => {
+        console.log('Running test: Deve devolver erro 500 se ocorrer um erro inesperado');
         jest.setTimeout(30000); // Aumentar o tempo limite para este teste
 
         User.findAndCountAll.mockImplementation(() => { throw new Error('Erro inesperado'); });
