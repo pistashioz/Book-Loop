@@ -2087,8 +2087,8 @@ exports.getReviews = async (req, res) => {
         
         const formattedReviews = reviews.map(review => ({
             literaryReviewId: review.literaryReviewId,
-            reviewContent: review.literaryReview, // Full content
-            createdAt: review.creationDate,
+            literaryReview: review.literaryReview, // Full content
+            creationDate: review.creationDate,
             user: {
                 userId: review.User.userId,
                 username: review.User.username,
