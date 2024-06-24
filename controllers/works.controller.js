@@ -2096,7 +2096,7 @@ exports.getReviews = async (req, res) => {
                 reviewCount: review.User.totalReviews || 0,
                 followersCount: review.User.totalFollowers || 0
             },
-            likeCount: review.totalLikes || 0,
+            totalLikes: review.totalLikes || 0,
             commentCount: review.totalComments || 0,
             literaryRating: review.literaryRating,
             links: [
@@ -2173,7 +2173,7 @@ exports.addReview = async (req, res) => {
             userId: req.userId,
             literaryReview,
             literaryRating,
-            creationDate: new Date()
+            creationDate: new Date(),
         });
 
         // Fetch the user's total reviews and total followers to include in the response
@@ -2291,7 +2291,6 @@ exports.updateReview = async (req, res) => {
 
         // Fetch the updated review for response
         const updatedReview = await LiteraryReview.findByPk(literaryReviewId);
-
         return res.status(200).json({ 
             success: true, 
             message: `Review with ID ${literaryReviewId} was updated successfully.`,
@@ -2563,7 +2562,7 @@ exports.getReviewsComments = async (req, res) => {
             literaryReviewId: comment.literaryReviewId,
             comment: comment.comment,
             createdAt: comment.creationDate,
-            likeCount: comment.totalLikes || 0,
+            totalLikes: comment.totalLikes || 0,
             user: {
                 userId: comment.Commenter.userId,
                 username: comment.Commenter.username,
@@ -2669,7 +2668,7 @@ exports.addCommentToReview = async (req, res) => {
                     username: user.username,
                     profileImage: user.profileImage
                 },
-                likeCount: newComment.totalLikes
+                totalLikes: newComment.totalLikes
             }
         });
     } catch (err) {
