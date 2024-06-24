@@ -3,13 +3,13 @@ const { getEnumValues } = require('../utils/sequelizeHelpers');
 
 /* // Helper Functions
 const validateAddressComplete = function(value, next) {
-    if ((value !== undefined || this.street !== undefined || this.streetNumber !== undefined || this.postalCode !== undefined) && 
-    !(this.street && this.streetNumber && this.postalCode)) {
-        throw new Error('All address fields must be provided together.');
-    }
-    next();
+if ((value !== undefined || this.street !== undefined || this.streetNumber !== undefined || this.postalCode !== undefined) && 
+!(this.street && this.streetNumber && this.postalCode)) {
+throw new Error('All address fields must be provided together.');
+}
+next();
 };
- */
+*/
 // User Model Definition
 module.exports = (sequelize, DataTypes) => {
     const User = sequelize.define('User', {
@@ -37,9 +37,16 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             validate: {
                 notNull: { msg: 'Password cannot be null or empty!' },
-                len: { args: [5, 60], msg: 'Password should be between 8 and 60 characters' } // Adjusted maximum length
+                len: { args: [8, 60], msg: 'Password should be between 8 and 60 characters' }, // Minimum 8 characters
+                isComplex(value) {
+                    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+                    if (!regex.test(value)) {
+                        throw new Error('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.');
+                    }
+                }
             }
         },
+        
         birthDate: {
             type: DataTypes.DATEONLY,
             allowNull: false,

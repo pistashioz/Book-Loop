@@ -41,6 +41,9 @@ router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 router.post('/me/refresh', usersController.refreshTokens);
 router.post('/resend-verification-email', usersController.resendVerificationEmail);
 
+router.post('/request-password-reset', usersController.requestPasswordReset);
+router.post('/reset-password', usersController.resetPassword);
+
 // Routes for handling account deactivation and deletion requests
 router.patch('/me/deactivate', verifyToken, usersController.deactivateAccount);
 router.patch('/me/delete', verifyToken, usersController.initiateAccountDeletion);

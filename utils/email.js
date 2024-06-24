@@ -4,6 +4,7 @@ const db = require('../models');
 const { Token } = db;
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3360';
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
 
 
 const transporter = nodemailer.createTransport({
@@ -48,20 +49,20 @@ const sendVerificationEmail = async (user, transaction) => {
   };
   
 
-const sendPasswordResetEmail = async (user) => {
-  const token = randToken.generate(20);
-  const expiresAt = new Date();
-  expiresAt.setHours(expiresAt.getHours() + 1); // Token expires in 1 hour
-
-  await Token.create({
-    tokenKey: token,
-    userId: user.id,
-    tokenType: 'passwordReset',
-    expiresAt
-  });
-
-  const html = `<p>Reset your password by clicking <a href="${API_BASE_URL}/users/reset-password?token=${token}">here</a>.</p>`;
-  await sendEmail(user.email, 'Password Reset', html);
-};
+  const sendPasswordResetEmail = async (user) => {
+    const token = randToken.generate(20);
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Token expires in 1 hour
+  
+    await Token.create({
+      tokenKey: token,
+      userId: user.userId,
+      tokenType: 'passwordReset',
+      expiresAt
+    });
+  
+    const html = `<p>Reset your password by clicking <a href="${FRONTEND_BASE_URL}/reset-password?token=${token}">here</a>.</p>`;
+    await sendEmail(user.email, 'Password Reset', html);
+  };
 
 module.exports = { sendVerificationEmail, sendPasswordResetEmail };

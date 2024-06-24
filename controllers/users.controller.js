@@ -1133,7 +1133,48 @@ exports.updateUserSettings = async (req, res) => {
       console.error('Error updating user settings', error);
       return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
-  };
+};
+
+const updatePassword = async (userId, currentPassword, newPassword) => {
+    let transaction;
+  
+    try {
+      transaction = await db.sequelize.transaction();
+  
+      const user = await db.User.findByPk(userId, { transaction });
+      if (!user) {
+        await transaction.rollback();
+        return { status: 404, data: { message: "User not found." } };
+      }
+  
+      // Validate current password
+      if (!(await user.validPassword(currentPassword))) {
+        await transaction.rollback();
+        return { status: 401, data: { message: "Invalid current password." } };
+      }
+  
+      // Update the user's password and mark as changed
+      user.password = newPassword;
+      user.changed('password', true);
+  
+      // Invalidate all sessions due to password change
+      await logoutUserSessions(userId, transaction);
+  
+      await user.save({ transaction });
+  
+      await transaction.commit();
+  
+      return {
+        status: 200,
+        data: { message: "Password updated successfully." }
+      };
+    } catch (error) {
+      if (transaction) await transaction.rollback();
+      console.error("Error during the transaction:", error);
+      return { status: 500, data: { message: "Error updating password.", error: error.message } };
+    }
+};
+
   
   async function updateAccountSettings(userId, body) {
     const { email, username, name, birthdayDate, holidayMode } = body;
@@ -1218,46 +1259,7 @@ exports.updateUserSettings = async (req, res) => {
     }
   }
   
-  const updatePassword = async (userId, currentPassword, newPassword) => {
-    let transaction;
-  
-    try {
-      transaction = await db.sequelize.transaction();
-  
-      const user = await db.User.findByPk(userId, { transaction });
-      if (!user) {
-        await transaction.rollback();
-        return { status: 404, data: { message: "User not found." } };
-      }
-  
-      // Validate current password
-      if (!(await user.validPassword(currentPassword))) {
-        await transaction.rollback();
-        return { status: 401, data: { message: "Invalid current password." } };
-      }
-  
-      // Update the user's password and mark as changed
-      user.password = newPassword;
-      user.changed('password', true);
-  
-      // Invalidate all sessions due to password change
-      await logoutUserSessions(userId, transaction);
-  
-      await user.save({ transaction });
-  
-      await transaction.commit();
-  
-      return {
-        status: 200,
-        data: { message: "Password updated successfully." }
-      };
-    } catch (error) {
-      if (transaction) await transaction.rollback();
-      console.error("Error during the transaction:", error);
-      return { status: 500, data: { message: "Error updating password.", error: error.message } };
-    }
-  };
-  
+
 
 
 
@@ -1540,7 +1542,54 @@ async function logoutUserSessions(userId, transaction) {
     }
   };
   
-
+  exports.requestPasswordReset = async (req, res) => {
+    const { email } = req.body;
+  
+    try {
+      const user = await User.findOne({ where: { email } });
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+  
+      await sendPasswordResetEmail(user);
+      return res.status(200).json({ message: 'Password reset email sent.' });
+    } catch (error) {
+      console.error('Error requesting password reset:', error);
+      return res.status(500).json({ message: 'Error requesting password reset.', error: error.message });
+    }
+  };
+  
+  exports.resetPassword = async (req, res) => {
+    const { token, newPassword } = req.body;
+  
+    try {
+      const resetToken = await Token.findOne({
+        where: { tokenKey: token, tokenType: 'passwordReset', invalidated: false, expiresAt: { [Op.gt]: new Date() } }
+      });
+  
+      if (!resetToken) {
+        return res.status(400).json({ message: 'Invalid or expired token.' });
+      }
+  
+      const user = await User.findByPk(resetToken.userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+  
+      user.password = newPassword;
+      user.changed('password', true);
+      await user.save();
+  
+      resetToken.invalidated = true;
+      await resetToken.save();
+  
+      return res.status(200).json({ message: 'Password reset successfully.' });
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      return res.status(500).json({ message: 'Error resetting password.', error: error.message });
+    }
+  };
 
 
 exports.followUser = async (req, res) => {
