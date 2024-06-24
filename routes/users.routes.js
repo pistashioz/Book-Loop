@@ -39,6 +39,7 @@ router.route('/me/settings')
 router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 
 router.post('/me/refresh', usersController.refreshTokens);
+router.post('/resend-verification-email', usersController.resendVerificationEmail);
 
 // Routes for handling account deactivation and deletion requests
 router.patch('/me/deactivate', verifyToken, usersController.deactivateAccount);
@@ -88,6 +89,8 @@ router.delete('/me/favorite-authors/:personId', verifyToken, usersController.rem
 router.route('/')
 .get(usersController.findAll)
 .post(usersController.create);
+
+router.get('/verify-email', usersController.verifyEmail);
 
 // Get users eligible for deletion
 router.get('/scheduled-to-delete', verifyToken, isAdmin, adminController.getUsersForDeletion);

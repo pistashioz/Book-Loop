@@ -14,6 +14,10 @@ const { uploadToAzure } = require('../utils/azureHelpers');
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person, Role, PersonRole   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
 
+const { sendVerificationEmail } = require('../utils/email');
+
+
+
 const MAX_ENTRIES_PER_TYPE = 30;
 const MAX_SEARCH_ENTRIES = 10;
 
@@ -331,62 +335,91 @@ async function fetchLiteraryReviews(userId, currentUserId, page = 1, limit = 10)
     };
   }
   
-
-// Create a new user
-exports.create = async (req, res) => {
-
-// Extract the required fields from the request body
-const { username, email, password, birthDate, activateConfigs, acceptTAndC } = req.body;
-
-if (!username || !email || !password || !birthDate || !acceptTAndC) {
-    return res.status(400).json({ message: "All fields including birth date must be provided and Terms must be accepted" });
-}
-
-// Start a transaction - either all goes well, or none at all
-const t = await db.sequelize.transaction();
-
-try {
-    // Create a new user
-    const newUser = await User.create({ username, 
-        email, 
+  exports.create = async (req, res) => {
+    const { username, email, password, birthDate, activateConfigs, acceptTAndC } = req.body;
+  
+    if (!username || !email || !password || !birthDate || !acceptTAndC) {
+      return res.status(400).json({ message: "All fields including birth date must be provided and Terms must be accepted" });
+    }
+  
+    const t = await db.sequelize.transaction();
+  
+    try {
+      const newUser = await User.create({
+        username,
+        email,
         password,
-        birthDate }, { transaction: t });
-        
-        
-        // Fetch all configurations from the configuration table
-        const configurations = await Configuration.findAll({ transaction: t });
-        
-        // Create a userConfiguration record for each configuration
-        const configPromises = configurations.map(config => 
-            UserConfiguration.create({
-                userId: newUser.userId,
-                configId: config.configId,
-                configValue: activateConfigs ? 'true' : 'false'  // Set based on activateConfigs flag
-            }, { transaction: t })
-        );
-        
-        // Wait for all promises to resolve
-        await Promise.all(configPromises);
-        
-        
-        // Commit the transaction
-        await t.commit();
-        
-        res.status(201).json({
-            message: "User registered successfully.",
-            user: newUser
-        });    
+        birthDate
+      }, { transaction: t });
+  
+      const configurations = await Configuration.findAll({ transaction: t });
+  
+      const configPromises = configurations.map(config =>
+        UserConfiguration.create({
+          userId: newUser.id,
+          configId: config.id,
+          configValue: activateConfigs ? 'true' : 'false'
+        }, { transaction: t })
+      );
+  
+      await Promise.all(configPromises);
+  
+      await sendVerificationEmail(newUser);
+  
+      await t.commit();
+  
+      res.status(201).json({
+        message: "User registered successfully. Please check your email to verify your account.",
+        user: newUser
+      });
     } catch (error) {
-        console.error("Detailed error: ", error);
-        if (error instanceof ValidationError) {
-            return res.status(400).json({
-                message: "Validation error",
-                errors: error.errors.map(e => e.message)
-            });
+      await t.rollback();
+      console.error("Detailed error: ", error);
+      if (error instanceof ValidationError) {
+        return res.status(400).json({
+          message: "Validation error",
+          errors: error.errors.map(e => e.message)
+        });
+      }
+      res.status(500).json({ message: "Error creating user", error: error.message });
+    }
+  };
+
+exports.verifyEmail = async (req, res) => {
+    const { token } = req.query;
+
+    if (!token) {
+        return res.status(400).json({ message: 'Invalid token' });
+    }
+
+    try {
+        const emailToken = await Token.findOne({
+            where: { tokenKey: token, tokenType: 'emailConfirmation', invalidated: false }
+        });
+
+        if (!emailToken) {
+            return res.status(400).json({ message: 'Invalid or expired token' });
         }
-        res.status(500).json({ message: "Error creating user", error: error.message });
+
+        const user = await User.findByPk(emailToken.userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        user.isVerified = true;
+        await user.save();
+
+        emailToken.invalidated = true;
+        emailToken.lastUsedAt = new Date();
+        await emailToken.save();
+
+        res.status(200).json({ message: 'Email verified successfully. You can now log in.' });
+    } catch (error) {
+        console.error("Error verifying email:", error);
+        res.status(500).json({ message: "Error verifying email", error: error.message });
     }
 };
+
     
 /* // Update a user
 exports.update = async (req, res) => {
@@ -925,6 +958,7 @@ async function fetchAccountSettings(userId) {
     
     return {
         email: user.email,
+        isVerified: user.isVerified,
         username: user.username,
         name: user.name,
         profileImage: user.profileImage,
@@ -1160,112 +1194,117 @@ exports.updateUserSettings = async (req, res) => {
   }
   
   
-
-
-// Update user account settings
-async function updateAccountSettings(userId, body) {
+  async function updateAccountSettings(userId, body) {
     const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
     console.log('updateAccountSettings', body);
-
+  
     let transaction;
-
+  
     try {
-        transaction = await db.sequelize.transaction();
-
-        const user = await db.User.findByPk(userId, { transaction });
-        if (!user) {
-            await transaction.rollback();
-            return { status: 404, data: { message: "User not found." } };
+      transaction = await db.sequelize.transaction();
+  
+      const user = await db.User.findByPk(userId, { transaction });
+      if (!user) {
+        await transaction.rollback();
+        return { status: 404, data: { message: "User not found." } };
+      }
+  
+      // Collect validation errors
+      const validationErrors = [];
+      
+      if (!email) {
+        validationErrors.push({ message: "Email cannot be null or empty!", field: 'email' });
+      }
+      if (!username) {
+        validationErrors.push({ message: "Username cannot be null or empty!", field: 'username' });
+      }
+      if (!birthdayDate) {
+        validationErrors.push({ message: "Birth date cannot be null or empty!", field: 'birthDate' });
+      }
+  
+      if (validationErrors.length > 0) {
+        await transaction.rollback();
+        return { status: 400, data: { message: "Validation errors occurred.", errors: validationErrors } };
+      }
+  
+      // Check if the update includes password changes
+      if (currentPassword || newPassword || confirmPassword) {
+        // Validate presence of password fields
+        if (!currentPassword || !newPassword || !confirmPassword) {
+          await transaction.rollback();
+          return { status: 400, data: { message: "All password fields must be provided.", errors: [{ message: "All password fields must be provided.", field: 'password' }] } };
         }
-
-        // Collect validation errors
-        const validationErrors = [];
+  
+        // Validate current password
+        if (!(await user.validPassword(currentPassword))) {
+          await transaction.rollback();
+          return { status: 401, data: { message: "Invalid current password.", errors: [{ message: "Invalid current password.", field: 'currentPassword' }] } };
+        }
+  
+        // Validate new password confirmation
+        if (newPassword !== confirmPassword) {
+          await transaction.rollback();
+          return { status: 400, data: { message: "New passwords do not match.", errors: [{ message: "New passwords do not match.", field: 'newPassword' }] } };
+        }
+  
+        // Update the user's password and mark as changed
+        user.password = newPassword;
+        user.changed('password', true);
         
-        if (!email) {
-            validationErrors.push({ message: "Email cannot be null or empty!", field: 'email' });
-        }
-        if (!username) {
-            validationErrors.push({ message: "Username cannot be null or empty!", field: 'username' });
-        }
-        if (!birthdayDate) {
-            validationErrors.push({ message: "Birth date cannot be null or empty!", field: 'birthDate' });
-        }
-
-        if (validationErrors.length > 0) {
-            return { status: 400, data: { message: "Validation errors occurred.", errors: validationErrors } };
-        }
-
-        // Check if the update includes password changes
-        if (currentPassword || newPassword || confirmPassword) {
-            // Validate presence of password fields
-            if (!currentPassword || !newPassword || !confirmPassword) {
-                await transaction.rollback();
-                return { status: 400, data: { message: "All password fields must be provided.", errors: [{ message: "All password fields must be provided.", field: 'password' }] } };
-            }
-
-            // Validate current password
-            if (!(await user.validPassword(currentPassword))) {
-                await transaction.rollback();
-                return { status: 401, data: { message: "Invalid current password.", errors: [{ message: "Invalid current password.", field: 'currentPassword' }] } };
-            }
-
-            // Validate new password confirmation
-            if (newPassword !== confirmPassword) {
-                await transaction.rollback();
-                return { status: 400, data: { message: "New passwords do not match.", errors: [{ message: "New passwords do not match.", field: 'newPassword' }] } };
-            }
-
-            // Update the user's password and mark as changed
-            user.password = newPassword;
-            user.changed('password', true);
-            
-            // Invalidate all sessions due to password change
-            await logoutUserSessions(userId, transaction);
-        }
-
-        let isEmailChanged = email && email !== user.email;
-        const updateData = {
-            email,
-            username,
-            name,
-            birthDate: birthdayDate,
-            holidayMode,
-            isVerified: !isEmailChanged ? user.isVerified : false
-        };
-
-        // Update user details with validation
-        await user.update(updateData, { transaction, validate: true });
-
-        // Send verification email if email changed
-        if (isEmailChanged) {
-            sendVerificationEmail(user.email);
-        }
-
+        // Invalidate all sessions due to password change
+        await logoutUserSessions(userId, transaction);
+      }
+  
+      let isEmailChanged = email && email !== user.email;
+      const updateData = {
+        email,
+        username,
+        name,
+        birthDate: birthdayDate,
+        holidayMode,
+        isVerified: !isEmailChanged ? user.isVerified : false
+      };
+  
+      // Update user details with validation
+      await user.update(updateData, { transaction, validate: true });
+  
+      // Invalidate previous tokens if email is changed
+      if (isEmailChanged) {
+        await Token.destroy({ where: { userId: userId, tokenType: 'emailConfirmation' }, transaction });
+  
+        await sendVerificationEmail(user, transaction); // Pass transaction here
+        const logoutResponse = await logoutUserSessions(userId, transaction); // Invalidate all sessions if email changes
+  
         await transaction.commit();
-
-        return {
-            status: 200,
-            data: {
-                message: "User account updated successfully",
-                user: {
-                    email: user.email,
-                    username: user.username,
-                    name: user.name,
-                    birthDate: user.birthDate,
-                    holidayMode: user.holidayMode,
-                    isVerified: user.isVerified
-                }
-            }
-        };
-    } catch (error) {
-        if (transaction) await transaction.rollback();
-        console.error("Error during the transaction:", error);
-        if (error instanceof ValidationError) {
-            return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => ({ message: e.message, field: e.path })) } };
+        return logoutResponse; // Return the logout response with status and data
+      }
+  
+      await transaction.commit();
+  
+      return {
+        status: 200,
+        data: {
+          message: "User account updated successfully",
+          user: {
+            email: user.email,
+            username: user.username,
+            name: user.name,
+            birthDate: user.birthDate,
+            holidayMode: user.holidayMode,
+            isVerified: user.isVerified
+          }
         }
-        return { status: 500, data: { message: "Error updating user account", error: error.message } };
+      };
+    } catch (error) {
+      if (transaction) await transaction.rollback();
+      console.error("Error during the transaction:", error);
+      if (error instanceof ValidationError) {
+        return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => ({ message: e.message, field: e.path })) } };
+      }
+      return { status: 500, data: { message: "Error updating user account", error: error.message } };
     }
-}
+  }
+  
 
 
 // Helper function to update notification settings for a user
@@ -1420,44 +1459,70 @@ async function updatePrivacySettings(userId, settings) {
 async function logoutUserSessions(userId, transaction) {
     console.log(`Logging out all sessions globally for user ${userId}...`);
     try {
-        // Invalidate all session logs for the user
-        await SessionLog.update({
-            endTime: new Date()
-        }, {
-            where: {
-                userId: userId,
-                endTime: null
-            },
-            transaction
-        });
-        
-        // Invalidate all tokens for the user
-        await Token.update({
-            invalidated: true,
-            lastUsedAt: new Date()
-        }, {
-            where: {
-                userId: userId,
-                invalidated: false,
-                lastUsedAt: null
-            },
-            transaction
-        });
+      // Invalidate all session logs for the user
+      await SessionLog.update({
+        endTime: new Date()
+      }, {
+        where: {
+          userId: userId,
+          endTime: null
+        },
+        transaction
+      });
+      
+      // Invalidate all tokens for the user
+      await Token.update({
+        invalidated: true,
+        lastUsedAt: new Date()
+      }, {
+        where: {
+          userId: userId,
+          invalidated: false,
+          lastUsedAt: null
+        },
+        transaction
+      });
+  
+      return { status: 403, data: { redirectTo: '/login' } };
     } catch (error) {
-        console.error("Failed to log out sessions globally", error);
-        throw error;  // Propagate this error up to catch it in the calling function
+      console.error("Failed to log out sessions globally", error);
+      throw error;  // Propagate this error up to catch it in the calling function
     }
-}
-
-exports.logoutUserSessions = logoutUserSessions;
-
-function sendVerificationEmail(email) {
-    console.log(`Sending verification email to ${email}`);
-    // email sending logic here
-}
+  }
+  
+  exports.logoutUserSessions = logoutUserSessions;
+  
 
 
 
+  exports.resendVerificationEmail = async (req, res) => {
+    const { email } = req.body;
+  
+    try {
+      const user = await db.User.findOne({ where: { email } });
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+  
+      // Invalidate previous email confirmation tokens
+      await db.Token.destroy({
+        where: {
+          userId: user.userId,
+          tokenType: 'emailConfirmation'
+        }
+      });
+  
+      // Send a new verification email
+      await sendVerificationEmail(user);
+  
+      res.status(200).json({ message: 'Verification email sent successfully' });
+    } catch (error) {
+      console.error('Error resending verification email:', error);
+      res.status(500).json({ message: 'Failed to resend verification email', error: error.message });
+    }
+  };
+  
 
 
 
