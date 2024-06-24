@@ -5,14 +5,17 @@
   "main": "index.js",
   "scripts": {
     "dev": "node app.js",
-  "test": "jest --detectOpenHandles",
-      "testApi": "jest tests/integration/api",
-  "test:coverage": "jest --coverage --detectOpenHandles"
+    "dev2": "nodemon app.js",
+    "test": "jest --detectOpenHandles",
+    "testApi": "jest tests/integration/api",
+    "test:coverage": "jest --coverage --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@azure/identity": "^4.3.0",
+    "@azure/storage-blob": "^12.23.0",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -20,9 +23,11 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
     "mysql2": "^3.9.7",
     "node-cron": "^3.0.3",
-    "sequelize": "^6.37.3"
+    "sequelize": "^6.37.3",
+    "sharp": "^0.33.4"
   },
   "devDependencies": {
     "jest": "^29.7.0",

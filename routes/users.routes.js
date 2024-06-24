@@ -4,6 +4,8 @@ const usersController = require('../controllers/users.controller');
 const adminController = require('../controllers/admin.controller');
 const { verifyToken } = require('../middleware/authJwt');
 const { isAdmin } = require('../middleware/admin');
+const uploadProfilePicture = require('../middleware/uploadFile');
+
 const extractUserId = require('../middleware/extractUserId');
 
 // Middleware to log request details and compute response time
@@ -32,7 +34,7 @@ router.patch('/:userId', verifyToken, isAdmin, adminController.toggleSuspension)
 // router.get('/me', verifyToken, usersController.getMyProfile);
 router.route('/me/settings') 
 .get(verifyToken, usersController.getUserSettings)
-.patch(verifyToken, usersController.updateUserSettings);
+.patch(verifyToken, uploadProfilePicture, usersController.updateUserSettings);
 
 router.patch('/me/address', verifyToken, usersController.updateUserAddress);
 
@@ -97,7 +99,7 @@ router.route('/:id')
 .delete(usersController.delete); */
 
 router.post('/login', usersController.login);
-router.post('/logout', verifyToken, usersController.logout);
+router.post('/logout', usersController.logout);
 
 
 // router.get('/validate-session', verifyToken, usersController.validateSession);

@@ -7,22 +7,15 @@ const db = require('../models');
 const { Token, SessionLog } = db;
 const { verifyTokenHelper } = require('../utils/jwtHelpers');
 
-/**
- * Middleware to verify the validity of access tokens.
- * Adds user and session IDs to the request object if valid.
- */
-
 exports.verifyToken = async (req, res, next) => {
     const token = req.cookies.accessToken;
-    console.log(`Token received in middleware: ${token}`);
-    
+
     if (!token) {
-        console.log('No access token found.');
         return res.status(401).send({ refresh: true });
     }
 
     try {
-        console.log('Decoding access token...');
+
         const decoded = await verifyTokenHelper(token);
         const session = await SessionLog.findOne({ where: { sessionId: decoded.session, endTime: null } });
         if (!session) {
@@ -50,7 +43,6 @@ exports.verifyToken = async (req, res, next) => {
         return res.status(500).send({ message: 'Failed to authenticate token.' });
     }
 };
-
 
 // Function to issue access token
 exports.issueAccessToken = (userId, sessionId) => {

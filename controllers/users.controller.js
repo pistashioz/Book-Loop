@@ -5,6 +5,10 @@ const config = require('../config/auth.config');
 const dayjs = require('dayjs');
 const { Op, ValidationError } = require('sequelize');
 
+const multer = require('multer');
+const sharp = require('sharp');
+const { BlobServiceClient } = require('@azure/storage-blob');
+const { uploadToAzure } = require('../utils/azureHelpers'); 
 
 // Access models through the centralized db object
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person, Role, PersonRole   } = db;
@@ -552,7 +556,7 @@ exports.login = async (req, res) => {
         await t.commit();
         res.status(200).json({
             message: "Login successful",
-            user: { id: user.userId, username: user.username, email: user.email, isAdmin: user.isAdmin }
+            user: { id: user.userId, username: user.username, email: user.email, isAdmin: user.isAdmin, profileImage: user.profileImage }
         });
     } catch (error) {
         if (t) await t.rollback();
@@ -563,7 +567,6 @@ exports.login = async (req, res) => {
 
 
 
-// Function to refresh tokens (to be called by a dedicated refresh endpoint)
 exports.refreshTokens = async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
     console.log(`Received refreshToken: ${refreshToken}`);
@@ -606,55 +609,33 @@ exports.refreshTokens = async (req, res) => {
     }
 };
 
-// Log out action for user
+
 exports.logout = async (req, res) => {
-    const sessionId = req.sessionId; // The current session ID obtained from the authenticated user's request
-    
-    // Start a transaction for database operations
-    const t = await db.sequelize.transaction();
+    const sessionId = req.sessionId; 
     
     try {
-        // Invalidate the session
-        await SessionLog.update({
-            endTime: new Date()
-        }, {
-            where: {
-                sessionId: sessionId
-            },
-            transaction: t
-        });
-        
-        // Invalidate the refresh token
-        await Token.update({
-            invalidated: true,
-            lastUsedAt: new Date()
-        }, {
-            where: {
-                sessionId: sessionId,
-                tokenType: 'refresh',
-                invalidated: false // Only update if it's not already invalidated
-            },
-            transaction: t
-        });
-        
-        // We could delete the session log entry instead of invalidating it
-        // await SessionLog.destroy({
-        //     where: {
-        //         sessionId: sessionId
-        //     },
-        //     transaction: t
-        // });
-        
+        // Invalidate the session if sessionId is available
+        if (sessionId) {
+            await db.sequelize.transaction(async (t) => {
+                await SessionLog.update(
+                    { endTime: new Date() },
+                    { where: { sessionId: sessionId }, transaction: t }
+                );
+                
+                await Token.update(
+                    { invalidated: true, lastUsedAt: new Date() },
+                    { where: { sessionId: sessionId, tokenType: 'refresh', invalidated: false }, transaction: t }
+                );
+            });
+        }
+
         // Clear token cookies
         res.clearCookie('accessToken');
-        res.clearCookie('refreshToken', { path: '/users/me/refresh' }); // Specify the path to match the cookie
+        res.clearCookie('refreshToken', { path: '/users/me/refresh' });
 
-        await t.commit();
-        
         res.status(200).json({ message: "Logout successful.", logout: true });
     } catch (error) {
-        console.error("Failed operation: ", error);
-        await t.rollback();
+        console.error("Error during logout:", error);
         res.status(500).json({ message: "Error during logout", error: error.message });
     }
 };
@@ -892,7 +873,7 @@ exports.getUserSettings = async (req, res) => {
 async function fetchProfileSettings(userId) {
     const userProfile = await db.User.findByPk(userId, {
         attributes: ['userId','username', 'email', 'profileImage', 'about', 'defaultLanguage','showCity',
-            'street','streetNumber', 'postalCode',
+            'street','streetNumber', 'postalCode', 'deliverByHand'
          ],
         include: [
             {
@@ -922,7 +903,8 @@ async function fetchProfileSettings(userId) {
             locality: userProfile.postalCodeDetails?.locality ? userProfile.postalCodeDetails.locality : null,
             country: userProfile.postalCodeDetails?.country ? userProfile.postalCodeDetails.country : null
         },
-        showCity: userProfile.showCity
+        showCity: userProfile.showCity,
+        deliverByHand: userProfile.deliverByHand
     };
 }
     
@@ -945,6 +927,7 @@ async function fetchAccountSettings(userId) {
         email: user.email,
         username: user.username,
         name: user.name,
+        profileImage: user.profileImage,
         birthdayDate: user.birthDate,
         holidayMode: user.holidayMode,
         socialMediaProfiles: user.userSocialMedias? user.userSocialMedias.map(sm => ({
@@ -1079,84 +1062,104 @@ async function fetchPrivacySettings(userId) {
     }
 }
 
-/////
-// Update user settings based on type
+
+/////// Update user settings based on type
+
 exports.updateUserSettings = async (req, res) => {
     const userId = req.userId;  // Extracted from verifyToken middleware
     const type = req.query.type;
-    
+  
+    console.log(req.file)
+
     try {
-        let updateResult;
-        switch (type) {
-            case 'profile':
-                updateResult = await updateProfileSettings(userId, req.body);
-                break;
-            case 'account':
-                updateResult = await updateAccountSettings(userId, req.body);
-                break;
-            case 'notifications':
-                updateResult = await updateNotificationSettings(userId, req.body);
-                break;
-            case 'privacy':
-                updateResult = await updatePrivacySettings(userId, req.body);
-                break;
-            default:
-                return res.status(400).json({ message: "Invalid settings type specified" });
-        }
-
-        if (!updateResult || typeof updateResult.status !== 'number' || typeof updateResult.data !== 'object') {
-            throw new Error("Invalid response from settings update function");
-        }
-
-        return res.status(updateResult.status).json(updateResult.data);
+      let updateResult;
+      switch (type) {
+        case 'profile':
+          updateResult = await updateProfileSettings(userId, req.body, req.file);
+          break;
+        case 'account':
+          updateResult = await updateAccountSettings(userId, req.body);
+          break;
+        case 'notifications':
+          updateResult = await updateNotificationSettings(userId, req.body);
+          break;
+        case 'privacy':
+          updateResult = await updatePrivacySettings(userId, req.body);
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid settings type specified" });
+      }
+  
+      if (!updateResult || typeof updateResult.status !== 'number' || typeof updateResult.data !== 'object') {
+        throw new Error("Invalid response from settings update function");
+      }
+  
+      return res.status(updateResult.status).json(updateResult.data);
     } catch (error) {
-        console.error('Error updating user settings', error);
-        return res.status(500).json({ message: "Error updating settings", error: error.message });
+      console.error('Error updating user settings', error);
+      return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
-};
+  };
 
-
-
-async function updateProfileSettings(userId, body) {
-    const { about, defaultLanguage, showCity } = body; // const { about, defaultLanguage, showCity, profileImage } = body;
-    console.log(body)
+  async function updateProfileSettings(userId, body, file) {
+    const { about, defaultLanguage, showCity, deliverByHand } = body;
     const t = await db.sequelize.transaction();
-
+  
     try {
-        const user = await db.User.findByPk(userId, { transaction: t });
-
-        if (!user) {
-            await t.rollback();
-            return { status: 404, data: { message: "User not found." } };
-        }
-
-        // Update user profile details within a transaction
-        await user.update({
-            about: about !== undefined ? about : user.about,
-            defaultLanguage: defaultLanguage || user.defaultLanguage,
-            showCity: showCity !== undefined ? showCity : user.showCity,
-            // profileImage: profileImage || user.profileImage
-        }, { transaction: t });
-
-        await t.commit();
-        return {status: 400,
-            data: {message: "User profile updated successfully",
-            user: {
-                about: user.about,
-                defaultLanguage: user.defaultLanguage,
-                showCity: user.showCity,
-                // profileImage: user.profileImage
-            }
-        }};
-    } catch (error) {
+      const user = await db.User.findByPk(userId, { transaction: t });
+  
+      if (!user) {
         await t.rollback();
-        if (error instanceof ValidationError) {
-            return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
+        return { status: 404, data: { message: "User not found." } };
+      }
+  
+      // Handle profile image upload
+      let profileImageUrl = user.profileImage;
+      if (file) {
+        const processedImage = await sharp(file.buffer)
+          .resize(200, 200) // Example resizing
+          .jpeg({ quality: 80 })
+          .toBuffer();
+  
+        // Upload to Azure Blob Storage
+        const blobName = `profile-pictures/${userId}/profile-picture.jpeg`;
+        profileImageUrl = await uploadToAzure('profile-pictures', blobName, processedImage);
+      }
+  
+      // Update user profile details within a transaction
+      await user.update({
+        about: about !== undefined ? about : user.about,
+        defaultLanguage: defaultLanguage || user.defaultLanguage,
+        showCity: showCity !== undefined ? showCity : user.showCity,
+        profileImage: profileImageUrl,
+        deliverByHand: deliverByHand !== undefined ? deliverByHand : user.deliverByHand, // Add this line
+      }, { transaction: t });
+  
+      await t.commit();
+      return {
+        status: 200,
+        data: {
+          message: "User profile updated successfully",
+          user: {
+            about: user.about,
+            defaultLanguage: user.defaultLanguage,
+            showCity: user.showCity,
+            profileImage: user.profileImage,
+            deliverByHand: user.deliverByHand, // Add this line
+          }
         }
-        console.error("Error updating user profile:", error);
-        return { status: 500, data: { message: "Error updating user profile", error: error.message } };
+      };
+    } catch (error) {
+      await t.rollback();
+      if (error instanceof ValidationError) {
+        return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
+      }
+      console.error("Error updating user profile:", error);
+      return { status: 500, data: { message: "Error updating user profile", error: error.message } };
     }
-}
+  }
+  
+  
 
 
 // Update user account settings
