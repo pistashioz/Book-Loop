@@ -29,7 +29,8 @@
     "nodemailer": "^6.9.14",
     "rand-token": "^1.0.1",
     "sequelize": "^6.37.3",
-    "sharp": "^0.33.4"
+    "sharp": "^0.33.4",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

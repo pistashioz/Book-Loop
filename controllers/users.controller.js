@@ -8,8 +8,7 @@ const { Op, ValidationError } = require('sequelize');
 const multer = require('multer');
 const sharp = require('sharp');
 const { BlobServiceClient } = require('@azure/storage-blob');
-const { uploadToAzure } = require('../utils/azureHelpers'); 
-
+const { uploadToAzure, generateSASToken } = require('../utils/azureHelpers');
 // Access models through the centralized db object
 const { User, UserConfiguration, Configuration, SessionLog, Token, PostalCode, Block, NavigationHistory, EntityType, Listing, BookEdition, UserFavoriteAuthor, UserFavoriteGenre, Genre, Person, Role, PersonRole   } = db;
 const { issueAccessToken, handleRefreshToken } = require('../middleware/authJwt'); 
@@ -1098,13 +1097,10 @@ async function fetchPrivacySettings(userId) {
 
 
 /////// Update user settings based on type
-
 exports.updateUserSettings = async (req, res) => {
     const userId = req.userId;  // Extracted from verifyToken middleware
     const type = req.query.type;
   
-    console.log(req.file)
-
     try {
       let updateResult;
       switch (type) {
@@ -1120,6 +1116,10 @@ exports.updateUserSettings = async (req, res) => {
         case 'privacy':
           updateResult = await updatePrivacySettings(userId, req.body);
           break;
+        case 'security':
+          const { currentPassword, newPassword } = req.body;
+          updateResult = await updatePassword(userId, currentPassword, newPassword);
+          break;
         default:
           return res.status(400).json({ message: "Invalid settings type specified" });
       }
@@ -1134,68 +1134,9 @@ exports.updateUserSettings = async (req, res) => {
       return res.status(500).json({ message: "Error updating settings", error: error.message });
     }
   };
-
-  async function updateProfileSettings(userId, body, file) {
-    const { about, defaultLanguage, showCity, deliverByHand } = body;
-    const t = await db.sequelize.transaction();
-  
-    try {
-      const user = await db.User.findByPk(userId, { transaction: t });
-  
-      if (!user) {
-        await t.rollback();
-        return { status: 404, data: { message: "User not found." } };
-      }
-  
-      // Handle profile image upload
-      let profileImageUrl = user.profileImage;
-      if (file) {
-        const processedImage = await sharp(file.buffer)
-          .resize(200, 200) // Example resizing
-          .jpeg({ quality: 80 })
-          .toBuffer();
-  
-        // Upload to Azure Blob Storage
-        const blobName = `profile-pictures/${userId}/profile-picture.jpeg`;
-        profileImageUrl = await uploadToAzure('profile-pictures', blobName, processedImage);
-      }
-  
-      // Update user profile details within a transaction
-      await user.update({
-        about: about !== undefined ? about : user.about,
-        defaultLanguage: defaultLanguage || user.defaultLanguage,
-        showCity: showCity !== undefined ? showCity : user.showCity,
-        profileImage: profileImageUrl,
-        deliverByHand: deliverByHand !== undefined ? deliverByHand : user.deliverByHand, // Add this line
-      }, { transaction: t });
-  
-      await t.commit();
-      return {
-        status: 200,
-        data: {
-          message: "User profile updated successfully",
-          user: {
-            about: user.about,
-            defaultLanguage: user.defaultLanguage,
-            showCity: user.showCity,
-            profileImage: user.profileImage,
-            deliverByHand: user.deliverByHand, // Add this line
-          }
-        }
-      };
-    } catch (error) {
-      await t.rollback();
-      if (error instanceof ValidationError) {
-        return { status: 400, data: { message: "Validation error", errors: error.errors.map(e => e.message) } };
-      }
-      console.error("Error updating user profile:", error);
-      return { status: 500, data: { message: "Error updating user profile", error: error.message } };
-    }
-  }
-  
   
   async function updateAccountSettings(userId, body) {
-    const { email, username, name, birthdayDate, holidayMode, currentPassword, newPassword, confirmPassword } = body;
+    const { email, username, name, birthdayDate, holidayMode } = body;
     console.log('updateAccountSettings', body);
   
     let transaction;
@@ -1225,34 +1166,6 @@ exports.updateUserSettings = async (req, res) => {
       if (validationErrors.length > 0) {
         await transaction.rollback();
         return { status: 400, data: { message: "Validation errors occurred.", errors: validationErrors } };
-      }
-  
-      // Check if the update includes password changes
-      if (currentPassword || newPassword || confirmPassword) {
-        // Validate presence of password fields
-        if (!currentPassword || !newPassword || !confirmPassword) {
-          await transaction.rollback();
-          return { status: 400, data: { message: "All password fields must be provided.", errors: [{ message: "All password fields must be provided.", field: 'password' }] } };
-        }
-  
-        // Validate current password
-        if (!(await user.validPassword(currentPassword))) {
-          await transaction.rollback();
-          return { status: 401, data: { message: "Invalid current password.", errors: [{ message: "Invalid current password.", field: 'currentPassword' }] } };
-        }
-  
-        // Validate new password confirmation
-        if (newPassword !== confirmPassword) {
-          await transaction.rollback();
-          return { status: 400, data: { message: "New passwords do not match.", errors: [{ message: "New passwords do not match.", field: 'newPassword' }] } };
-        }
-  
-        // Update the user's password and mark as changed
-        user.password = newPassword;
-        user.changed('password', true);
-        
-        // Invalidate all sessions due to password change
-        await logoutUserSessions(userId, transaction);
       }
   
       let isEmailChanged = email && email !== user.email;
@@ -1305,6 +1218,110 @@ exports.updateUserSettings = async (req, res) => {
     }
   }
   
+  const updatePassword = async (userId, currentPassword, newPassword) => {
+    let transaction;
+  
+    try {
+      transaction = await db.sequelize.transaction();
+  
+      const user = await db.User.findByPk(userId, { transaction });
+      if (!user) {
+        await transaction.rollback();
+        return { status: 404, data: { message: "User not found." } };
+      }
+  
+      // Validate current password
+      if (!(await user.validPassword(currentPassword))) {
+        await transaction.rollback();
+        return { status: 401, data: { message: "Invalid current password." } };
+      }
+  
+      // Update the user's password and mark as changed
+      user.password = newPassword;
+      user.changed('password', true);
+  
+      // Invalidate all sessions due to password change
+      await logoutUserSessions(userId, transaction);
+  
+      await user.save({ transaction });
+  
+      await transaction.commit();
+  
+      return {
+        status: 200,
+        data: { message: "Password updated successfully." }
+      };
+    } catch (error) {
+      if (transaction) await transaction.rollback();
+      console.error("Error during the transaction:", error);
+      return { status: 500, data: { message: "Error updating password.", error: error.message } };
+    }
+  };
+  
+
+
+
+async function updateProfileSettings(userId, body, file) {
+    const { about, defaultLanguage, showCity, deliverByHand } = body;
+    const t = await db.sequelize.transaction();
+
+    console.log('updateProfileSettings', body);
+    try {
+        const user = await db.User.findByPk(userId, { transaction: t });
+
+        if (!user) {
+            await t.rollback();
+            return { status: 404, data: { message: "User not found." } };
+        }
+
+        // Handle profile image upload
+        let profileImageUrl = user.profileImage;
+        if (file) {
+            console.log('file', file);
+            const processedImage = await sharp(file.buffer)
+                .resize(200, 200) // Example resizing
+                .jpeg({ quality: 80 })
+                .toBuffer();
+
+            // Upload to Azure Blob Storage
+            const blobName = `profile-pictures/${userId}/profile-picture.jpeg`;
+            profileImageUrl = await uploadToAzure('profile-pictures', blobName, processedImage);
+
+            // Generate SAS Token for accessing the uploaded image
+            const sasToken = generateSASToken('profile-pictures', blobName);
+            profileImageUrl += `?${sasToken}`;
+        } 
+
+        // Update user profile details within a transaction
+        await user.update({
+            about: about !== undefined ? about : user.about,
+            defaultLanguage: defaultLanguage || user.defaultLanguage,
+            showCity: showCity !== undefined ? showCity : user.showCity,
+            profileImage: file ? profileImageUrl : null,
+            deliverByHand: deliverByHand !== undefined ? deliverByHand : user.deliverByHand, // Add this line
+        }, { transaction: t });
+
+        await t.commit();
+        return {
+            status: 200,
+            data: {
+                message: "User profile updated successfully",
+                user: {
+                    about: user.about,
+                    defaultLanguage: user.defaultLanguage,
+                    showCity: user.showCity,
+                    profileImage: user.profileImage,
+                    deliverByHand: user.deliverByHand, // Add this line
+                }
+            }
+        };
+    } catch (error) {
+        await t.rollback();
+        console.error("Error updating user profile:", error);
+        return { status: 500, data: { message: "Error updating user profile", error: error.message } };
+    }
+}
+
 
 
 // Helper function to update notification settings for a user
