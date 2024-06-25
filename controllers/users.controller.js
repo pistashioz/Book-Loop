@@ -1289,9 +1289,9 @@ async function updateProfileSettings(userId, body, file) {
             const blobName = `profile-pictures/${userId}/profile-picture.jpeg`;
             profileImageUrl = await uploadToAzure('profile-pictures', blobName, processedImage);
 
-            // Generate SAS Token for accessing the uploaded image
+       /*      // Generate SAS Token for accessing the uploaded image
             const sasToken = generateSASToken('profile-pictures', blobName);
-            profileImageUrl += `?${sasToken}`;
+            profileImageUrl += `?${sasToken}`; */
         } 
 
         // Update user profile details within a transaction

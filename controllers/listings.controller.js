@@ -2,7 +2,8 @@ const { Op, ValidationError, where } = require("sequelize");
 const db = require('../models')
 const { Listing, BookEdition, User, PurchaseReview, NavigationHistory, Wishlist, Work, BookAuthor, Person, BookGenre, Genre, PostalCode, ListingImage } = db;
 const sharp = require('sharp');
-const { uploadToAzure, generateSASToken } = require('../utils/azureHelpers');
+const { uploadToAzure } = require('../utils/azureHelpers');
+
 
 
 /**
@@ -52,14 +53,10 @@ exports.createListing = async (req, res) => {
                 const blobName = `listings-images/${sellerUserId}/${Date.now()}-${file.originalname}`;
                 const photoUrl = await uploadToAzure('listings-images', blobName, processedImage);
 
-                // Generate SAS Token for accessing the uploaded image
-                const sasToken = generateSASToken('listings-images', blobName);
-                const fullPhotoUrl = `${photoUrl}?${sasToken}`;
-
                 // Save image URL in ListingImage table
                 await ListingImage.create({
                     listingId: newListing.listingId,
-                    imageUrl: fullPhotoUrl
+                    imageUrl: photoUrl // Direct URL without token
                 }, { transaction: t });
             }
         }
