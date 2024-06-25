@@ -1204,6 +1204,7 @@ exports.getEditions = async (req, res) => {
         const editions = foundEditions.map(edition => ({
             ISBN: edition.ISBN,
             title: edition.title,
+            workId: edition.Work.workId,
             editionType: edition.editionType,
             publisherId: edition.publisherId,
             publisherName: edition.Publisher ? edition.Publisher.publisherName : null,
