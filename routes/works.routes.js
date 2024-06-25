@@ -22,6 +22,8 @@ router.route('/')
 router.route('/editions')
     .get(workController.getEditions);
 
+    router.get('/books', verifyToken, workController.getBookByISBN);
+    
 // Routes to handle operations on a specific work by ID
 router.route('/:workId')
     .get(verifyToken, isAdmin, workController.findWork)
@@ -40,6 +42,8 @@ router.route('/:workId/editions/:editionUUID')
     .get(workController.getBookEdition)
     .patch(verifyToken, isAdmin, workController.updateBookEdition)
     .delete(verifyToken, isAdmin, workController.removeBookEdition);
+
+
 
 // Routes to handle operations on reviews of a specific work by ID
 router.route('/:workId/reviews')

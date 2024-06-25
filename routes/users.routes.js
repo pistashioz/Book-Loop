@@ -4,7 +4,7 @@ const usersController = require('../controllers/users.controller');
 const adminController = require('../controllers/admin.controller');
 const { verifyToken } = require('../middleware/authJwt');
 const { isAdmin } = require('../middleware/admin');
-const uploadProfilePicture = require('../middleware/uploadFile');
+const {uploadProfilePicture} = require('../middleware/uploadFile');
 
 const extractUserId = require('../middleware/extractUserId');
 

@@ -1,6 +1,9 @@
 const { Op, ValidationError, where } = require("sequelize");
 const db = require('../models')
 const { Listing, BookEdition, User, PurchaseReview, NavigationHistory, Wishlist, Work, BookAuthor, Person, BookGenre, Genre, PostalCode, ListingImage } = db;
+const sharp = require('sharp');
+const { uploadToAzure, generateSASToken } = require('../utils/azureHelpers');
+
 
 /**
  * Create a new listing.
@@ -10,26 +13,58 @@ const { Listing, BookEdition, User, PurchaseReview, NavigationHistory, Wishlist,
  * @returns {Promise<Object>} JSON response with success status and message
  */
 exports.createListing = async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
         const { sellerUserId, ISBN, listingTitle, price, listingCondition, listingDescription } = req.body;
 
         // Check if ISBN exists in the BookEdition table
-        const bookEdition = await BookEdition.findByPk(ISBN);
+        const bookEdition = await BookEdition.findOne({ where: { ISBN } });
 
-        // Set availability based on the existence of the ISBN in the database
-        let availability = bookEdition ? 'Active' : 'Pending Approval';
+        let availability = 'Pending Approval';
+        let editionUUID = null;
+
+        if (bookEdition) {
+            editionUUID = bookEdition.UUID;
+            availability = 'Active';
+        }
 
         // Create a new listing
         const newListing = await Listing.create({
             sellerUserId,
-            ISBN,
+            editionUUID,
             listingTitle,
             listingDate: new Date(),
             price,
             listingCondition,
             availability,
             listingDescription
-        });
+        }, { transaction: t });
+
+        // Process uploaded photos and save URLs in ListingImage table
+        if (req.files) {
+            for (const file of req.files) {
+                const processedImage = await sharp(file.buffer)
+                    .resize(800, 800) // Resize as needed
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+
+                // Upload to Azure Blob Storage or any other storage service
+                const blobName = `listings-images/${sellerUserId}/${Date.now()}-${file.originalname}`;
+                const photoUrl = await uploadToAzure('listings-images', blobName, processedImage);
+
+                // Generate SAS Token for accessing the uploaded image
+                const sasToken = generateSASToken('listings-images', blobName);
+                const fullPhotoUrl = `${photoUrl}?${sasToken}`;
+
+                // Save image URL in ListingImage table
+                await ListingImage.create({
+                    listingId: newListing.listingId,
+                    imageUrl: fullPhotoUrl
+                }, { transaction: t });
+            }
+        }
+
+        await t.commit();
 
         res.status(201).json({
             success: true,
@@ -37,6 +72,7 @@ exports.createListing = async (req, res) => {
             listing: newListing
         });
     } catch (error) {
+        await t.rollback();
         console.error("Error creating listing:", error);
         if (error instanceof ValidationError) {
             res.status(400).json({ success: false, message: error.errors.map(e => e.message) });
@@ -45,7 +81,6 @@ exports.createListing = async (req, res) => {
         }
     }
 };
-
 
 
 /**

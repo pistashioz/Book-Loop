@@ -4,6 +4,8 @@ const listingsController = require('../controllers/listings.controller');
 const { verifyToken } = require('../middleware/authJwt');
 const extractUserId = require('../middleware/extractUserId');
 
+const { uploadListingPhotos } = require('../middleware/uploadFile');
+
 // Middleware to log request details and compute response time
 router.use((req, res, next) => {
     const start = Date.now();
@@ -15,7 +17,7 @@ router.use((req, res, next) => {
 });
 
 router.route('/')
-    .post(verifyToken, listingsController.createListing)
+    .post(verifyToken, uploadListingPhotos, listingsController.createListing)
     .get(listingsController.findAllListings)
 
 /* // Route to create a new listing

@@ -1591,6 +1591,19 @@ async function logoutUserSessions(userId, transaction) {
     }
   };
 
+  exports.validateResetToken = async (req, res) => {
+    const { token } = req.body;
+    try {
+      const tokenRecord = await db.Token.findOne({ where: { tokenKey: token, tokenType: 'passwordReset', invalidated: false } });
+      if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+        return res.status(400).json({ valid: false });
+      }
+      res.status(200).json({ valid: true });
+    } catch (error) {
+      res.status(500).json({ valid: false });
+    }
+  };
+  
 
 exports.followUser = async (req, res) => {
     const { targetUserId } = req.body;

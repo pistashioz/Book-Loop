@@ -2957,3 +2957,67 @@ exports.removeLikeComment = async (req, res) => {
         });
     }
 };
+
+
+
+
+exports.getBookByISBN = async (req, res) => {
+    const { isbn } = req.query;
+    const cleanIsbn = isbn.trim(); // Remover espaços em branco extras
+    console.log('ISBN:', cleanIsbn);
+    console.log(typeof cleanIsbn);
+
+    try {
+      const bookEdition = await BookEdition.findOne({
+        where: { ISBN: cleanIsbn },
+        include: [
+          {
+            model: Work,
+            include: [
+              {
+                model: BookAuthor,
+                as: 'BookAuthors',
+                include: [
+                  { model: Person,
+                    as: 'Person'
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      });
+      console.log('Book Edition:', bookEdition);
+  
+      if (!bookEdition) {
+        return res.status(404).json({ message: 'Book not found' });
+      }
+  
+      const work = bookEdition.Work;
+      console.log('Work:', work);
+  
+      if (!work) {
+        return res.status(404).json({ message: 'Work not found' });
+      }
+  
+      const bookAuthor = work.BookAuthors[0]; // Assumindo que há pelo menos um autor
+      console.log('Book Author:', bookAuthor);
+  
+      if (!bookAuthor) {
+        return res.status(404).json({ message: 'Author not found' });
+      }
+  
+      const author = bookAuthor.Person;
+      console.log('Author:', author);
+  
+      if (!author) {
+        return res.status(404).json({ message: 'Author not found' });
+      }
+  
+      res.json({ author: author.personName });
+    } catch (error) {
+      console.error('Error fetching book details:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
